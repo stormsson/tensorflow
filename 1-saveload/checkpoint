@@ -1,2 +1,0 @@
-model_checkpoint_path: "/mnt/shares/Sites/tensorflow/saveload.ckpt"
-all_model_checkpoint_paths: "/mnt/shares/Sites/tensorflow/saveload.ckpt"
