@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 
+#http://tflearn.org/examples/
 import os
 import numpy as np
 import tensorflow as tf
