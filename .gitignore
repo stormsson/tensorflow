@@ -4,3 +4,4 @@ saveload.ckpt.meta
 log
 *.csv
 .DS_Store
+*.meta
