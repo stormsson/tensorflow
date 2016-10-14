@@ -19,6 +19,9 @@ update = tf.assign(state, new_value)
 # launched the graph.  We first have to add the `init` Op to the graph.
 init_op = tf.initialize_all_variables()
 
+# esempio di eval invece di run
+# hot.eval(session=sess)
+
 # ops to save and load
 saver = tf.train.Saver()
 with tf.Session() as sess:
