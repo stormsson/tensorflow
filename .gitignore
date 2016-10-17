@@ -5,3 +5,4 @@ log
 *.csv
 .DS_Store
 *.meta
+*.pyc
