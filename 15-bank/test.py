@@ -24,7 +24,6 @@ saveFilePath = "./model.tflearn"
 # Gender: 0 = Female, 1 = Male
 
 
-
 def generateData():
     data = {'in':[], 'out':[]}
 
@@ -45,23 +44,22 @@ def generateGraph():
     # g = tflearn.dropout(g, .9)
     g = tflearn.fully_connected(g, 32, activation='relu')
     # g = tflearn.dropout(g, .8)
-    g = tflearn.fully_connected(g, 2, activation='sigmoid')
+    g = tflearn.fully_connected(g, 2, activation='softmax')
 
     return g
 
 
 data = generateData()
 cx = StandardizerContext(data['in'], Standardizer.NORMALIZATION_TYPE_MIN_DIFF )
-# cx = StandardizerContext(data['in'], Standardizer.NORMALIZATION_TYPE_MEAN_ABSzMAX )
 data['in'] = cx.getData()
-pippo = []
+out_category_map = []
 for e in data['out']:
     if(e == 1):
-        pippo.append([1.0, 0.0])
+        out_category_map.append([1.0, 0.0])
     else:
-        pippo.append([0.0, 1.0])
+        out_category_map.append([0.0, 1.0])
 
-data['out'] = pippo
+data['out'] = out_category_map
 
 
 with tf.Graph().as_default():
@@ -79,7 +77,7 @@ with tf.Graph().as_default():
 
     # losses: softmax_categorical_crossentropy, categorical_crossentropy, binary_crossentropy, mean_square, hinge_loss, roc_auc_score, weak_cross_entropy_2d
     g = tflearn.regression(g, optimizer=adam,
-        batch_size=64,
+        batch_size=32,
         loss='categorical_crossentropy'
         # loss='binary_crossentropy'
         # loss='mean_square'
@@ -93,14 +91,12 @@ with tf.Graph().as_default():
         max_checkpoints=0
     )
 
-    if  os.path.exists(saveFilePath+".index"):
+    if False and os.path.exists(saveFilePath+".index"):
         m.load(saveFilePath)
         print("Restored model weights from ", saveFilePath)
 
     else:
         print("CREATING")
-        # print(data['in'][0], data['out'][0])
-        # exit()
         m.fit(data['in'], data['out'], n_epoch=100, shuffle=True,  snapshot_epoch=False, show_metric=True, validation_set=0.20, run_id="bank_classification")
         # m.save(saveFilePath)
 

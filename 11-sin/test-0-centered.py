@@ -22,7 +22,7 @@ def generateData(qty=1000):
         'out': []
     }
     for el in xrange(1, qty):
-        rnd = 2 * random.random()
+        rnd = 2 * random.random() -1
         #in: rads
         data['in'].append([rnd])
         X.append(rnd)
@@ -50,10 +50,11 @@ with tf.Graph().as_default():
     g = tflearn.fully_connected(g, 1, activation='linear')
     sgd = tflearn.optimizers.SGD(learning_rate=.1,
         lr_decay=.98)
+
     adam = tflearn.optimizers.Adam(
         learning_rate=0.01
     )
-    g = tflearn.regression(g, optimizer=adam,
+    g = tflearn.regression(g, optimizer=sgd,
          # loss='categorical_crossentropy')
         # loss='binary_crossentropy')
         loss='mean_square')
@@ -74,7 +75,7 @@ with tf.Graph().as_default():
     rX = []
     rY = []
     for x in xrange(1,100):
-        rnd = random.random() * 2
+        rnd = random.random() * 2 -1
         rX.append(rnd)
         res = m.predict([[rnd]])
         rY.append( res[0][0] )
