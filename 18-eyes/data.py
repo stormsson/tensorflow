@@ -6,7 +6,7 @@ from os.path import isfile, join
 import pickle
 
 
-directory = "images"
+directory = "data"
 
 eyes = [f for f in listdir(directory) if isfile(join(directory, f)) and "eye" in f]
 

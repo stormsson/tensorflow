@@ -14,11 +14,11 @@ import matplotlib.pyplot as plt
 
 from keras.models import Sequential, load_model
 from keras.layers import Dense, Dropout, Flatten
-from keras.layers import Conv2D, MaxPooling2D
+from keras.layers import Conv2D, MaxPooling2D, BatchNormalization
 
 from bcolors import bcolors
 import sys
-
+import tensorflow as tf
 params = sys.argv
 
 model_to_restore = False
@@ -26,18 +26,20 @@ if(len(params) ==2):
     model_to_restore = params[1]
 
 
-EPOCHS = 100
+EPOCHS = 300
 OPTIMIZER = "sgd"
 BATCH_SIZE = 64
 
 OPTIMIZER_LR = 0.00001
 OPTIMIZER_DECAY = 1e-7
 
-RESIZE_FACTOR = 6.4
+RESIZE_FACTOR = 1
 
-#cols, rows, channels
-IMG_SIZE = ( 286, 384, 1 )
-IMG_SIZE = ( 60, 45, 1 )
+IMG_WIDTH = 384
+IMG_HEIGHT = 286
+#rows, cols, channels
+IMG_SIZE = ( IMG_HEIGHT, IMG_WIDTH, 1 )
+#IMG_SIZE = ( 143, 192, 1 )
 
 img_db_file = "images_db_"+str(IMG_SIZE[0])+"x"+str(IMG_SIZE[1])+".npy"
 
@@ -66,19 +68,45 @@ def buildModel(input_shape):
     # r_eye X, r_eye Y , l_eye X, l_eye Y
     output_size = 4
 
-    model = Sequential()
-    model.add(Conv2D(32, kernel_size=(3, 3),
-                     activation='relu',
-                     input_shape=input_shape))
-    model.add(Conv2D(32, (3, 3), activation='relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    model.add(Dropout(0.25))
-    model.add(Flatten())
-    model.add(Dense(128, activation='relu'))
-    model.add(Dropout(0.5))
-    # model.add(Dense(128, activation='relu'))
-    # model.add(Dropout(0.5))
-    model.add(Dense(output_size, activation='sigmoid'))
+    with tf.device('/gpu:0'):
+
+        model = Sequential()
+        model.add(Conv2D(48, kernel_size=(11, 11),
+                         activation='relu',
+                         input_shape=input_shape))
+        model.add(MaxPooling2D(pool_size=(3, 3)))
+
+
+        model.add(Conv2D(64, (5, 5), activation='relu', activity_regularizer=keras.regularizers.l2(0.01)))
+        model.add(MaxPooling2D(pool_size=(3, 3)))
+        
+        model.add(Conv2D(64, (3, 3), activation='relu', activity_regularizer=keras.regularizers.l2(0.01)))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+
+
+        model.add(Conv2D(48, (3, 3), activation='relu', activity_regularizer=keras.regularizers.l2(0.01)))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+
+        
+        model.add(Flatten())
+
+        model.add(Dense(512, activation='relu'))        
+        model.add(Dropout(0.45))
+
+        model.add(Dense(512, activation='relu'))        
+        model.add(Dropout(0.25))
+
+        model.add(Dense(256, activation='relu'))
+        model.add(Dropout(0.25))
+
+
+
+        model.add(Dense(128, activation='relu'))
+        model.add(Dropout(0.25))
+
+        model.add(Dense(128, activation='relu'))
+        model.add(Dropout(0.2))
+        model.add(Dense(output_size, activation='sigmoid'))
 
     return model
 
@@ -110,6 +138,15 @@ def loadData(directory):
         # exit()
         x = images["x"]
         y = images["y"]
+
+        coords = y[0]
+        coords[0] = coords[0] * IMG_WIDTH
+        coords[1] = coords[1] * IMG_HEIGHT
+        coords[2] = coords[2] * IMG_WIDTH
+        coords[3] = coords[3] * IMG_HEIGHT
+        #print(coords)
+        #showDebugImage(np.reshape(x[0],(IMG_HEIGHT, IMG_WIDTH)) , coords)
+        #exit()
     else:
         db = pickle.load(open("eyes_db.pickle", "rb"))
         files = [f for f in listdir(directory) if isfile(join(directory, f)) and "jpg" in f]
@@ -118,18 +155,18 @@ def loadData(directory):
         random.shuffle(files)
 
         for f in files:
-            fileParts = f.split(".")
-            coords = np.array(db[fileParts[0]])
+            fileParts = f.split(".")            
+            coords = np.array(db[fileParts[0]], dtype="float32")        
 
-            # [ r_eye_x, l_eye_x, r_eye_y, l_eye_y ]
+            # [ l_eye_x, l_eye_y, r_eye_x, r_eye_y]
+
             coords = coords / RESIZE_FACTOR
-
+            
             # NORMALIZATION 0->1
-            coords[0] = coords[0] / IMG_SIZE[0]
-            coords[1] = coords[1] / IMG_SIZE[0]
-            coords[2] = coords[2] / IMG_SIZE[1]
-            coords[3] = coords[3] / IMG_SIZE[1]
-
+            coords[0] = coords[0] / IMG_WIDTH
+            coords[1] = coords[1] / IMG_HEIGHT
+            coords[2] = coords[2] / IMG_WIDTH
+            coords[3] = coords[3] / IMG_HEIGHT
 
             img = Image.open(directory+"/"+f)
             img.load()
@@ -149,62 +186,73 @@ def loadData(directory):
             # if(cnt > 99):
             #     break
             # print("appending", fileParts[0])
-            # print("coords: ",coords)
+            #print("coords: ",coords)
 
-            # showDebugImage(data, coords)
-            # exit()
+            #showDebugImage(data, coords)
+            #exit()
 
 
         x = np.array(x)
         y = np.array(y)
 
         np.savez(open(img_db_file, "wb"), x=x, y=y)
+        print("saved img_db_file!")
 
     return x,y
 
 
+def getModelCallbacks():
+
+    tensorboard_callback = keras.callbacks.TensorBoard(log_dir='./tensorboard', histogram_freq=0, write_graph=True, write_images=True)
+    earlystop_callback = keras.callbacks.EarlyStopping(monitor="val_loss", patience= 7)
+    reduceLROnPlateau_callback = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.1, patience=4, min_lr= 1e-9)
+
+    return [ tensorboard_callback, earlystop_callback, reduceLROnPlateau_callback ]
+
 
 x,y = loadData("images/"+str(IMG_SIZE[0]))
-train_percentage = .15
+train_percentage = .2
 train_size = int(math.floor(train_percentage * len(x)))
 print("Loaded %d samples. %d will be used for testing" % (len(x), train_size))
 
 x_train = np.array(x[:-train_size])
 y_train = np.array(y[:-train_size])
 
-x_test = np.array(x[-train_size:])
-y_test = np.array(y[-train_size:])
+x_validation = np.array(x[-train_size:])
+y_validation = np.array(y[-train_size:])
 
 input_shape = IMG_SIZE
 # print(x_train[0])
 # exit()
-print("Training samples: %d , testing samples: %d. Single sample shape: %s " % (len(x_train), len(x_test), x_train[0].shape) )
+print("Training samples: %d , testing samples: %d. Single sample shape: %s " % (len(x_train), len(x_validation), x_train[0].shape) )
 
 if model_to_restore:
     model = restoreModel(model_to_restore)
 else:
     model = buildModel(input_shape)
 
+LOSS_FUNCTION = keras.losses.mean_squared_error
+LOSS_FUNCTION = keras.losses.mean_absolute_error
 
-model.compile(loss=keras.losses.mean_squared_error,
+model.compile(loss= LOSS_FUNCTION,
               optimizer=getOptimizer(),
               metrics=['accuracy'])
 
 # $ > tensorboard --logdir path_to_current_dir/Graph
 
-tensorboard_callback = keras.callbacks.TensorBoard(log_dir='./tensorboard', histogram_freq=0, write_graph=True, write_images=True)
+
 
 model.fit(x_train, y_train,
     epochs=EPOCHS,
     batch_size=BATCH_SIZE,
     verbose=2,
-    validation_data=(x_test, y_test),
-    callbacks=[tensorboard_callback]
+    validation_data=(x_validation, y_validation),
+    callbacks= getModelCallbacks()
     )
 
-score = model.evaluate(x_test, y_test, verbose=0)
-print('Test loss:', score[0])
-print('Test accuracy:', score[1])
+score = model.evaluate(x_validation, y_validation, verbose=0)
+print('Validation loss:', score[0])
+print('Validation accuracy:', score[1])
 
 # optimizer, epochs, batch_size
 model_name = "model-{0}-{1}ep-{2}batchsize.h5".format(OPTIMIZER, EPOCHS, BATCH_SIZE)
@@ -213,7 +261,10 @@ if(model_to_restore):
 
 with open("models/"+model_name+".txt","w") as f:
     f.write("Optimizer: {0}\nEpochs: {1}\nBatch Size:{2}\n".format(OPTIMIZER, EPOCHS, BATCH_SIZE))
-    f.write("Test loss: "+str(score[0])+"\n")
-    f.write("Test accuracy: "+str(score[1])+"\n")
+    f.write("validation loss: "+str(score[0])+"\n")
+    f.write("validation accuracy: "+str(score[1])+"\n")
 
-model.save("models/"+model_name)
+try:
+    model.save("models/"+model_name)
+except IOError as e:
+    model.save(model_name)

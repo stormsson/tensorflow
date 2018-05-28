@@ -14,5 +14,5 @@ keras
 h5py
 PyUserInput
 python-daemon
-pyobjc-framework-Quartz
-pyautogui
+#pyobjc-framework-Quartz
+#pyautogui

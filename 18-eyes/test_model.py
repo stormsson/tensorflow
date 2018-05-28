@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+ #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 
 import keras
@@ -19,7 +19,7 @@ if(len(params) < 2):
     exit()
 
 model_filename = params[1]
-image_path = "images/60/BioID_0004.jpg"
+image_path = "images/286/BioID_0004.jpg"
 if(len(params)==3):
     image_path = params[2]
 
@@ -31,9 +31,14 @@ except Exception as e:
     print(bcolors.FAIL + "Model "+model_filename+" not found"+ bcolors.ENDC)
     exit()
 
-#cols, rows, channels
+#rows, colsd, channels
+IMG_WIDTH = 384
+IMG_HEIGHT = 286
 
 IMG_SIZE = ( 60, 45, 1 )
+IMG_SIZE = ( 143, 192, 1 )
+IMG_SIZE = ( IMG_HEIGHT, IMG_WIDTH, 1 )
+
 
 img = Image.open(image_path)
 img.load()
@@ -44,11 +49,12 @@ reshaped_data = np.reshape(data, IMG_SIZE)
 coords = model.predict(np.array([reshaped_data]))
 
 
+print("pre-mult coords: ",coords)
 
-coords[0][0] = coords[0][0] * IMG_SIZE[0]
-coords[0][1] = coords[0][1] * IMG_SIZE[0]
-coords[0][2] = coords[0][2] * IMG_SIZE[1]
-coords[0][3] = coords[0][3] * IMG_SIZE[1]
+coords[0][0] = coords[0][0] * IMG_WIDTH
+coords[0][1] = coords[0][1] * IMG_HEIGHT
+coords[0][2] = coords[0][2] * IMG_WIDTH
+coords[0][3] = coords[0][3] * IMG_HEIGHT
 print(coords)
 plt.imshow(data, cmap="gray")
 plt.plot([coords[0][0], coords[0][2]],[coords[0][1], coords[0][3]],'o', color="red")
