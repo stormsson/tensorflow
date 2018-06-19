@@ -26,7 +26,7 @@ if(len(params) >=2):
     model_to_restore = params[1]
 
 # training params
-EPOCHS = 30
+EPOCHS = 200
 
 if(len(params)>=3):
     EPOCHS = int(params[2])
@@ -36,11 +36,11 @@ BATCH_SIZE = 64
 
 #LOSS_FUNCTION = keras.losses.mean_squared_error
 LOSS_FUNCTION = keras.losses.mean_absolute_error
-LOSS_FUNCTION = keras.losses.mean_absolute_percentage_error
+#LOSS_FUNCTION = keras.losses.mean_absolute_percentage_error
 
 
 # optimizer params
-OPTIMIZER_LR = 0.00001
+OPTIMIZER_LR = 0.0001
 OPTIMIZER_DECAY = 1e-7
 
 # images params
@@ -70,6 +70,23 @@ def restoreModel(restore_file):
     if isfile(restore_file):
         model = load_model(restore_file)
         print(bcolors.OKGREEN+"restored model "+restore_file+"!"+bcolors.ENDC)
+
+        print("count: ",len(model.layers))
+        num_layers = len(model.layers)
+        tail_layers_to_train = 2
+
+        if tail_layers_to_train:
+            for layer in model.layers[:num_layers -tail_layers_to_train]:
+                layer.trainable = False
+
+            for layer in model.layers[num_layers -tail_layers_to_train:]:
+                layer.trainable = True
+
+
+        for i,layer in enumerate(model.layers):
+            print(i, layer.name, layer.trainable)
+
+
         return model
 
 def buildModel(input_shape):
@@ -82,46 +99,67 @@ def buildModel(input_shape):
     with tf.device('/gpu:0'):
 
         model = Sequential()
-        model.add(Conv2D(48, kernel_size=(11, 11),
+        model.add(Conv2D(64, kernel_size=(11, 11),
                          activation='relu',
+                         padding='same',
                          input_shape=input_shape))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+
+
+        model.add(Conv2D(64, (5, 5), 
+            activation='relu',
+            padding='same'))
         model.add(MaxPooling2D(pool_size=(3, 3)))
-
-
-        model.add(Conv2D(64, (5, 5), activation='relu'))
-        model.add(MaxPooling2D(pool_size=(2, 2)))
         
-        model.add(Conv2D(64, (3, 3), activation='relu'))
+        model.add(Conv2D(64, (3, 3), 
+            activation='relu',
+            padding='same'))
         model.add(MaxPooling2D(pool_size=(2, 2)))
 
 
-        model.add(Conv2D(48, (3, 3), activation='relu'))
+        model.add(Conv2D(48, (3, 3), 
+            activation='relu',
+            padding='same'))
         model.add(MaxPooling2D(pool_size=(2, 2)))
 
         
         model.add(Flatten())
 
         model.add(Dense(256, activation='relu'))        
-        #model.add(Dropout(0.3))
+        model.add(Dropout(0.3))
 
         model.add(Dense(512, activation='relu'))        
+        model.add(Dropout(0.3))
+
+        model.add(Dense(256, activation='relu'))
         model.add(Dropout(0.25))
+
+
+        model.add(Dense(256, activation='relu'))
+        model.add(Dropout(0.25))
+
+
+        model.add(Dense(256, activation='relu'))
+        model.add(Dropout(0.25))
+
 
         model.add(Dense(256, activation='relu'))
         model.add(Dropout(0.25))
 
 
 
-        model.add(Dense(128, activation='relu'))
-        model.add(Dropout(0.25))
-
-        model.add(Dense(128, activation='relu'))
-        model.add(Dropout(0.2))
         model.add(Dense(output_size, activation='sigmoid'))
 
     return model
 
 # optimizers:
+
+"""
+n.b. 
+momentum diminish fluctuations in weight changes over consecutives iterations
+weight decay penalizes weight changes
+"""
+
 
 def getOptimizer():
     # sgd = keras.optimizers.SGD(lr=0.1, decay=1e-2, momentum=0.9, nesterov=True)
@@ -218,7 +256,7 @@ def getModelCallbacks():
     earlystop_callback = keras.callbacks.EarlyStopping(monitor="val_loss", patience= 7)
     reduceLROnPlateau_callback = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.1, patience=4, min_lr= 1e-9)
 
-    return [ tensorboard_callback, earlystop_callback, reduceLROnPlateau_callback ]
+    return [ tensorboard_callback,  earlystop_callback, reduceLROnPlateau_callback ]
 
 
 x,y = loadData("images/"+str(IMG_SIZE[0]))
@@ -270,12 +308,28 @@ model_name = "model-{0}-{1}ep-{2}batchsize.h5".format(OPTIMIZER, EPOCHS, BATCH_S
 if(model_to_restore):
     model_name = "RESTORED-"+model_name
 
+
+model_config_path = "models/"+model_name+"_config.txt" 
+with open(model_config_path, "w") as f:
+    print(bcolors.OKGREEN+"Writing model config to: "+model_config_path+"!"+bcolors.ENDC)
+
+    f.write(str(model.get_config()))
+
 with open("models/"+model_name+".txt","w") as f:
     f.write("Optimizer: {0}\nEpochs: {1}\nBatch Size:{2}\n".format(OPTIMIZER, EPOCHS, BATCH_SIZE))
     f.write("validation loss: "+str(score[0])+"\n")
     f.write("validation accuracy: "+str(score[1])+"\n")
+    f.write("---\n")
+    f.write("Model configuration saved to:\n")
+    f.write(model_config_path+"\n")
+    f.write("Use model = Model.from_config(configuration_dictionary) to re-create the model")
+
+
+
 
 try:
     model.save("models/"+model_name)
+    print(bcolors.OKGREEN+"Model saved to: models/"+model_name+"!"+bcolors.ENDC)
+
 except IOError as e:
     model.save(model_name)
