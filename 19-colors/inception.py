@@ -23,8 +23,8 @@ from bcolors import bcolors
 
 from model import restoreModel
 
-TEST_DIR = "data/r_256/"
-TRAIN_DIR ="data/r_256_rgb/"
+TEST_DIR = "data/raf_testing/"
+TRAIN_DIR ="data/raf_training/"
 
 BATCH_SIZE = 10
 EPOCHS = 1
