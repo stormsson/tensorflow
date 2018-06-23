@@ -13,3 +13,4 @@ keras
 h5py
 python-daemon
 scikit-image
+docopt
