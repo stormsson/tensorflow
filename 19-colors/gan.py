@@ -1,60 +1,48 @@
 """ GAN
 
 Usage:
-    gan.py [-s] [-g MODEL] [-d MODEL] [--epochs=<e>]
+    gan.py [-p] [-g MODEL] [-d MODEL] [--epochs=<e>]
 
 Options:
     -g MODEL --generator=MODEL      specify generator model to restore
     -d MODEL --discriminator=MODEL  specify discriminator model to restore
-    -s --skip-pretraining           skip discriminator pretraining
+    -p --pretraining                only run discriminator pretraining
     --epochs=<e>                    training epochs [default: 100]
 """
 
 from docopt import docopt
 
+import random
 import keras
-from keras.applications.inception_resnet_v2 import InceptionResNetV2
-from keras.preprocessing import image
-from keras.engine import Layer
-from keras.applications.inception_resnet_v2 import preprocess_input
-from keras.layers import Conv2D, UpSampling2D, InputLayer, Conv2DTranspose, Input, Reshape, merge, concatenate
-from keras.layers import Activation, Dense, Dropout, Flatten
-from keras.layers.normalization import BatchNormalization
-from keras.callbacks import TensorBoard
 from keras.models import Sequential, Model
-from keras.layers.core import RepeatVector, Permute
 from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array, load_img
 from skimage.color import rgb2lab, lab2rgb, rgb2gray, gray2rgb
-from skimage.transform import resize
 from skimage.io import imsave
 import numpy as np
-import os
-import sys
-import random
 import tensorflow as tf
 
 from bcolors import bcolors
 
-from model import restoreModel, build_GAN_generator, build_GAN_discriminator, l1_loss
-from utils.misc import generate_noise
+
+from gan_model import build_GAN_generator, build_GAN_discriminator, get_gan_optimizer
+from utils.misc import generate_noise, l1_loss
+from utils.saveload import restore_model, save_model
 
 
 
 TRAIN_DIR = "data/r_cropped"
-
+DATAGEN_SEED = 1
 
 def getImageGenerator():
     # image generator
     datagen = ImageDataGenerator(
-            rescale=1./255.0,
-            shear_range=0.2,
-            zoom_range=0.2,
-            rotation_range=30,
-            horizontal_flip=True,
-            validation_split = 0.2 )
+            #rescale=1./255.0,
+            horizontal_flip=True)
+            #validation_split = 0.2 )
 
 
     return datagen
+dg = getImageGenerator()
 
    # test
     # color_me = []
@@ -92,14 +80,117 @@ def make_labels(size):
     return np.ones([size, 1]), np.zeros([size, 1])
 
 
+"""
+from an rgb image array to a single L channel of LAB format
+"""
+def extract_L_channel_from_RGB(img):
+    img = img / 255.0
+    grayscaled_rgb = gray2rgb(rgb2gray(img))
+    # Lab has range -127-128, so we divide by 128 to scale it down in the range -1/1
+    lab = rgb2lab(grayscaled_rgb) / 128
+    return lab[:,:,0]
+
+
+def fetchDataForPretraining():
+    SAMPLES = 400 # 540
+
+
+    # prendo SAMPLES immagini dal subset di training
+    # assegno loro la label 1
+
+    # per ogni sample
+    # lo converto in rgb-grey
+    # lo converto in lab
+    # estraggo il canale L
+    # assegno la label 0
+    # genero SAMPLES immagini col generator non allenato
+    # assegno loro la label 0
+    # passo tutto al discriminator
+
+    real_images = []
+    fake_images = []
+
+    # generate real images from directory
+    for imgs in  dg.flow_from_directory(TRAIN_DIR, batch_size=SAMPLES, class_mode=None, seed=DATAGEN_SEED):#, save_to_dir="tmp"):
+        real_images = np.array(imgs)
+        break
+
+
+    # extract L channel and generate fake images with generator
+    for img in real_images:
+
+        # returns a (256, 256) shape
+        lab_channel = np.array(extract_L_channel_from_RGB(img))
+
+        # convert to (256, 256, 1) shape
+        lab_channel = lab_channel.reshape(1, 256, 256, 1)
+
+        fake_image = generator.predict(lab_channel)[0]
+        fake_images.append(fake_image*255.0)
+    fake_images = np.array(fake_images)
+
+
+    #generate labels for both real and fake samples
+    real_labels, fake_labels = make_labels(len(real_images))
+
+    # data will be shuffled in the .fit method
+    X = np.concatenate((real_images, fake_images))
+    Y = np.concatenate((real_labels, fake_labels))
+
+    return X, Y
+
+
+def pretrainDiscriminator(generator, discriminator, EPOCHS):
+
+    X, Y = fetchDataForPretraining()
+
+    discriminator.fit(X, Y, validation_split= 0.2, verbose=1, epochs=EPOCHS, batch_size=1)
+
+    save_model(discriminator, "gan-discriminator-pretrained","models/gan/")
+
+
+
+
 
 if __name__ == '__main__':
     arguments = docopt(__doc__, version="Gan 1.0")
     print(arguments)
-    exit()
 
 
-    dg = getImageGenerator()
+    EPOCHS = int(arguments["--epochs"])
+
+    if arguments["--generator"]:
+        generator = restore_model(arguments["--generator"])
+    else:
+        generator = build_GAN_generator()
+
+    if arguments["--discriminator"]:
+        discriminator = restore_model(arguments["--discriminator"])
+    else:
+        discriminator = build_GAN_discriminator()
+
+
+    if(arguments["--pretraining"]):
+        pretrainDiscriminator(generator, discriminator, EPOCHS)
+        exit()
+
+
+    GAN = Sequential()
+    GAN.add(generator)
+    GAN.add(discriminator)
+
+    gan_optim = get_gan_optimizer()
+    GAN.compile(optimizer=gan_optim, loss='mse')
+
+
+
+
+
+
+
+
+
+
     for x in xrange(1,10):
         cnt =0
         for img in  dg.flow_from_directory(TRAIN_DIR, batch_size=1, class_mode=None, subset="training", save_to_dir="tmp/train"):
@@ -139,27 +230,9 @@ if __name__ == '__main__':
 
     exit()
 
-    generator = build_GAN_generator()
-    discriminator = build_GAN_discriminator()
-
-    GAN = Sequential()
-    GAN.add(generator)
-    GAN.add(discriminator)
-
-    LR = 0.0002
-    B1 = 0.5
-    DECAY = 0.0
-
-    optim = keras.optimizers.Adam(lr=LR, beta_1=B1, beta_2=0.999, epsilon=1e-08, decay=DECAY)
-
-    GAN.compile(optimizer=optim, loss=['mse', l1_loss])
 
 
 
-
-
-
- # with tf.device('/gpu:0'):
 
 
 

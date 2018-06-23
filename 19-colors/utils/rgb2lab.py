@@ -12,7 +12,7 @@ SCALE_DOWN_CONST = 255.0
 def rgb2lab(input_file_path):
     rgb = io.imread(input_file_path)
     lab = color.rgb2lab(rgb)
-    lab = lab / SCALE_DOWN_CONST 
+    lab = lab / SCALE_DOWN_CONST
 
 
 def rgb2labdir(input_directory, output_dir):
@@ -27,4 +27,4 @@ def rgb2labdir(input_directory, output_dir):
 
     for f in files:
         lab = rgb2lab(input_dir+"/"+f)
-        io.imsave(output_dir+"/"+f,lab) 
+        io.imsave(output_dir+"/"+f,lab)
