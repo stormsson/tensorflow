@@ -5,13 +5,15 @@ from keras.models import load_model as keras_load_model
 from os.path import isfile
 from bcolors import bcolors
 
-def restore_model(restore_file):
+def restore_model(restore_file, custom_objects=None, verbose=False):
+
+    if not custom_objects:
+        custom_objects = {}
 
     if isfile(restore_file):
-        model = keras_load_model(restore_file)
+        model = keras_load_model(restore_file, custom_objects)
         print(bcolors.OKGREEN+"restored model "+restore_file+"!"+bcolors.ENDC)
 
-        print("count: ",len(model.layers))
         num_layers = len(model.layers)
         tail_layers_to_train = False
 
@@ -23,8 +25,9 @@ def restore_model(restore_file):
                 layer.trainable = True
 
 
-        for i,layer in enumerate(model.layers):
-            print(i, layer.name, layer.trainable)
+        if verbose:
+            for i,layer in enumerate(model.layers):
+                print(i, layer.name, layer.trainable)
 
 
         return model
@@ -45,7 +48,7 @@ def save_model(model, model_name, directory_path=False):
         f.write(str(model.get_config()))
 
     try:
-        model.save("models/"+model_name)
+        model.save(directory_path+model_name)
         print(bcolors.OKGREEN+"Model saved to: models/"+model_name+"!"+bcolors.ENDC)
 
     except IOError as e:
