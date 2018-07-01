@@ -29,7 +29,7 @@ import math
 
 CHUNK_SIZE = 256
 
-def composeImage(model, inputFile, outputFile):
+def compose_image(model, inputFile, outputFile):
     img = Image.open(inputFile)
     img_width, img_height = img.size
 
@@ -51,7 +51,7 @@ def composeImage(model, inputFile, outputFile):
 
 
             noise = generate_noise(1, 256, 3)
-            prediction = model.predict({"noise_input": noise, "bw_input": chunk_array })[0]
+            prediction = model.predict({"gen_noise_input": noise, "gen_bw_input": chunk_array })[0]
             # prediction = model.predict([chunk_array])[0]
             prediction  = (prediction * 255).astype(np.uint8)
             generated_img  = Image.fromarray(prediction)
@@ -60,7 +60,7 @@ def composeImage(model, inputFile, outputFile):
             new_img.paste(generated_img,(x * CHUNK_SIZE, y * CHUNK_SIZE))
 
 
-    new_img.save(arguments["--output"])
+    new_img.save(outputFile)
 
 
 if __name__ == '__main__':
@@ -83,7 +83,7 @@ if __name__ == '__main__':
 
     if isfile(arguments["<path>"]):
         if arguments["--compose"]:
-            composeImage(model, arguments["<path>"], arguments["--output"])
+            compose_image(model, arguments["<path>"], arguments["--output"])
             exit()
 
         input_img = img_to_array(load_img(arguments["<path>"]))

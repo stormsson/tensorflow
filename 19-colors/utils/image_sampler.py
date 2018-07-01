@@ -27,7 +27,23 @@ def generator_image_sampler(datagen, batch_size, subset="training"):
 
         #yield({'noise_input': np.array(noises), 'bw_input': np.array(bw_images)}, {"img_output": np.array(g_y)})
 
+def gan_image_sampler(datagen,batch_size, subset="training"):
+    for imgs in datagen.flow_from_directory('data/r_cropped', batch_size=batch_size, class_mode=None, seed=1, subset=subset):
 
+        g_y = []
+
+        noises = []
+        bw_images = []
+        for i in imgs:
+            # the expected output is the original image
+            g_y.append(np.ones(1))
+
+
+            noises.append(generate_noise(1, 256, 3)[0])
+            bw_images.append(iu_rgb2gray(i))
+
+
+        yield([np.array(noises), np.array(bw_images)], np.array(g_y))
 
 RETURN_REAL_IMAGES = True
 RETURN_GENERATED_IMAGES = False
@@ -52,11 +68,14 @@ def discriminator_image_sampler(datagen, generator, batch_size, subset="training
                 #output
                 g_y.append(np.ones(1))
             else:
-            # generate data for FAKE images
+                # generate data for FAKE images
 
-            noise = generate_noise(1, 256, 3)[0]
-            colored_images.append(generator.predict([noise, bw_image])[0])
-            g_y.append(np.zeros(1))
+                noise = generate_noise(1, 256, 3)
+                bw_image = bw_image.reshape(1, 256, 256, 3)
+
+                colored_images.append(generator.predict([noise, bw_image])[0])
+                g_y.append(np.zeros(1))
 
 
         yield([ np.array(bw_images), np.array(colored_images)], np.array(g_y))
+
