@@ -4,6 +4,9 @@
 import numpy as np
 import keras.backend as K
 
+import os
+from PIL import Image
+
 """
 generate a fake image
 """
@@ -25,3 +28,14 @@ def wasserstein_loss(y_true, y_pred):
 def set_trainable(model, status):
     for layer in model.layers:
         layer.trainable = status
+
+def delete_not_256_images(folder):
+    cnt = 0
+    for filename in os.listdir(folder):
+        with Image.open(folder+"/"+filename) as im:
+            w,h = im.size
+
+        if w !=256 or h != 256:
+            os.remove(folder+"/"+filename)
+            print ("deleted "+folder+"/"+filename+ "size: %dx%d" % (w,h))
+            cnt+=1

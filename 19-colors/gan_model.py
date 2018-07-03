@@ -39,7 +39,7 @@ def build_GAN_generator(depth=10):
         name="gen_conv2d_0" ))
 
     # [depth] Conv2D Layers
-    for x in xrange(1, depth-1):
+    for x in xrange(1, depth):
         generator_model.add(Conv2D(64, kernel_size=3,
             strides=1,
             activation='relu',

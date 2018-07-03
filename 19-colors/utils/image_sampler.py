@@ -5,6 +5,9 @@ import numpy as np
 from utils.misc import generate_noise
 from utils.img_utils import rgb2gray as iu_rgb2gray
 
+IMG_BUFFER = []
+IMG_BUFFER_POINTER = 0
+
 
 def generator_image_sampler(datagen, batch_size, subset="training"):
 
@@ -27,7 +30,7 @@ def generator_image_sampler(datagen, batch_size, subset="training"):
 
         #yield({'noise_input': np.array(noises), 'bw_input': np.array(bw_images)}, {"img_output": np.array(g_y)})
 
-def gan_image_sampler(datagen,batch_size, subset="training"):
+def gan_image_sampler(datagen, batch_size, subset="training"):
     for imgs in datagen.flow_from_directory('data/r_cropped', batch_size=batch_size, class_mode=None, seed=1, subset=subset):
 
         g_y = []
@@ -45,9 +48,11 @@ def gan_image_sampler(datagen,batch_size, subset="training"):
 
         yield([np.array(noises), np.array(bw_images)], np.array(g_y))
 
+
+
 RETURN_REAL_IMAGES = True
 RETURN_GENERATED_IMAGES = False
-def discriminator_image_sampler(datagen, generator, batch_size, subset="training", returned_images=RETURN_REAL_IMAGES):
+def discriminator_image_sampler(graph, datagen, generator, batch_size, subset="training", return_real_images=RETURN_REAL_IMAGES):
 
     for imgs in datagen.flow_from_directory('data/r_cropped', batch_size=batch_size, class_mode=None, seed=1, subset=subset):
 
@@ -62,7 +67,7 @@ def discriminator_image_sampler(datagen, generator, batch_size, subset="training
             bw_images.append(bw_image)
             # generate data for REAL images
             #inputs
-            if returned_images == RETURN_REAL_IMAGES:
+            if return_real_images == RETURN_REAL_IMAGES:
                 # as a colored image, return the real one
                 colored_images.append(i/255.0)
                 #output
@@ -72,8 +77,8 @@ def discriminator_image_sampler(datagen, generator, batch_size, subset="training
 
                 noise = generate_noise(1, 256, 3)
                 bw_image = bw_image.reshape(1, 256, 256, 3)
-
-                colored_images.append(generator.predict([noise, bw_image])[0])
+                with graph.as_default():
+                    colored_images.append(generator.predict([noise, bw_image])[0])
                 g_y.append(np.zeros(1))
 
 

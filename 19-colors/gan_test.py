@@ -29,7 +29,7 @@ import math
 
 CHUNK_SIZE = 256
 
-def compose_image(model, inputFile, outputFile):
+def compose_image(model, inputFile, outputFile, return_data=False):
     img = Image.open(inputFile)
     img_width, img_height = img.size
 
@@ -60,7 +60,11 @@ def compose_image(model, inputFile, outputFile):
             new_img.paste(generated_img,(x * CHUNK_SIZE, y * CHUNK_SIZE))
 
 
-    new_img.save(outputFile)
+    if return_data:
+        return np.fromstring(new_img.tobytes(), dtype=np.uint8)
+    else:
+
+        new_img.save(outputFile)
 
 
 if __name__ == '__main__':

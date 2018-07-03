@@ -6,7 +6,7 @@ Usage:
 Options:
     -g MODEL --generator=MODEL      specify generator model to restore
     -d MODEL --discriminator=MODEL  specify discriminator model to restore
-    -c MODEL --combined-model=MODEL specify combined model to restore
+    -c MODEL --combined-model-weights=MODEL specify combined model weights to restore
     -e --epochs=<e>                 training epochs [default: 100]
     -s --save-interval=<s>          save models after # epochs [default: 10]
     --train-generator               train only generator
@@ -19,18 +19,30 @@ from docopt import docopt
 import random
 import math
 import itertools
+import os
 
+# KERAS stuff
 import keras
+import keras.backend as K
 from keras.models import Sequential, Model
 from keras.layers import Input
 from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array, load_img
+
+
+# TF stuff
+import tensorflow as tf
+
+
 from skimage.color import rgb2lab, lab2rgb, rgb2gray, gray2rgb
+
+
+
 import numpy as np
 
 
 from bcolors import bcolors
 
-
+# PROJECT STUFF
 from gan_model import build_GAN_generator, build_GAN_discriminator, get_gan_optimizer, get_custom_objects_for_restoring
 
 from utils.misc import generate_noise
@@ -40,13 +52,16 @@ from utils.image_sampler import generator_image_sampler, discriminator_image_sam
 RETURN_RGB_AS_Y = True
 RETURN_LABELS_AS_Y = False
 
-TRAIN_SAMPLES = 540
-VALIDATION_SAMPLES = 135
+TOTAL_SAMPLES = 7060
+TOTAL_SAMPLES = 200
+TRAIN_SAMPLES = int(math.floor(TOTAL_SAMPLES * 0.8))
+VALIDATION_SAMPLES = int(math.floor(TOTAL_SAMPLES * 0.2))
 
 
 
 HALF_TRAIN_SAMPLES = int(math.floor(TRAIN_SAMPLES / 2 ))
 HALF_VALIDATION_SAMPLES = int(math.floor(VALIDATION_SAMPLES / 2))
+
 
 
 """
@@ -123,6 +138,8 @@ def trainGenerator(generator, EPOCHS, save_interval=5, run_name=""):
     global VALIDATION_SAMPLES
 
 
+
+
     # TODO!!!! TESTARE QUESTO
     # callbacks = get_common_model_callbacks(run_name ) + get_generator_model_callbacks(save_interval,"gan-generator-checkpoint")
 
@@ -140,9 +157,11 @@ def trainGenerator(generator, EPOCHS, save_interval=5, run_name=""):
 
 
 def get_discriminator_model_callbacks(save_interval, checkpoint_prefix="gan-model-checkpoint"):
+    global MODEL_SAVING_DIR
+
     earlystop_callback = keras.callbacks.EarlyStopping(monitor="val_loss", patience= 7)
     reduceLROnPlateau_callback = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.1, patience=5, min_lr= 1e-9)
-    model_checkpoint_callback = keras.callbacks.ModelCheckpoint("models/gan/"+checkpoint_prefix+"-{epoch:02d}-{val_loss:02f}.h5", period=save_interval, verbose=1)
+    model_checkpoint_callback = keras.callbacks.ModelCheckpoint(MODEL_SAVING_DIR+checkpoint_prefix+"-{epoch:02d}-{val_loss:02f}.h5", period=save_interval, verbose=1)
 
     model_callbacks = [  reduceLROnPlateau_callback, model_checkpoint_callback ]
     return model_callbacks
@@ -195,7 +214,11 @@ def train_gan(generator, discriminator, gan, EPOCHS, save_interval, run_name="")
     global VALIDATION_SAMPLES
     global HALF_TRAIN_SAMPLES
     global HALF_VALIDATION_SAMPLES
+    global MODEL_SAVING_DIR
 
+
+
+    graph = tf.get_default_graph()
 
     x_data_gen = ImageDataGenerator(
         #rescale=1./255.0,
@@ -203,25 +226,54 @@ def train_gan(generator, discriminator, gan, EPOCHS, save_interval, run_name="")
         zoom_range=[1, 1.1],
         shear_range = 10,
         rotation_range=10,
-        validation_split=0.2)
+        validation_split=0.2 )
 
-
-    gan_callbacks = get_common_model_callbacks(run_name) + get_discriminator_model_callbacks(save_interval, "gan-combined-model-checkpoint")
+    gan_callbacks =  get_discriminator_model_callbacks(save_interval, "gan-combined-model-checkpoint")
 
     for epoch in range(EPOCHS):
+        fw = tf.summary.FileWriter(logdir="./tensorboard/"+run_name)
+
         print("EPOCH %d of %d" % (epoch, EPOCHS))
-        print("Training Discriminator")
+        print("Training Discriminator - REAL samples")
 
-        for x, y in discriminator_image_sampler(x_data_gen, generator, HALF_TRAIN_SAMPLES, "training"):
-            real_samples_loss = discriminator.train_on_batch(x, y)
-            print("Discriminator loss on real images: ", real_samples_loss)
-            break
+        real_samples_loss = discriminator.fit_generator(
+            discriminator_image_sampler(graph, x_data_gen, generator, 1),
+            validation_data=discriminator_image_sampler(graph, x_data_gen, generator, 1, subset="validation"),
+            epochs=1,
+            steps_per_epoch= HALF_TRAIN_SAMPLES,
+            validation_steps=HALF_VALIDATION_SAMPLES,
+            )
 
-        for x, y in discriminator_image_sampler(x_data_gen, generator, HALF_TRAIN_SAMPLES, "training", False):
-            generated_samples_loss = discriminator.train_on_batch(x, y)
-            print("Discriminator loss on generated images: ", generated_samples_loss)
-            break
+        print("Training Discriminator - GENERATED samples")
 
+        generated_samples_loss = discriminator.fit_generator(
+            discriminator_image_sampler(graph, x_data_gen, generator, 1, subset="training", return_real_images=False),
+            validation_data=discriminator_image_sampler(graph, x_data_gen, generator, 1, subset="validation", return_real_images=False),
+            epochs=1,
+            steps_per_epoch= HALF_TRAIN_SAMPLES,
+            validation_steps=HALF_VALIDATION_SAMPLES,
+            )
+
+
+
+        # for x, y in discriminator_image_sampler(x_data_gen, generator, HALF_TRAIN_SAMPLES, "training"):
+        #     real_samples_loss = discriminator.train_on_batch(x, y)
+        #     print("Discriminator loss on real images: ", real_samples_loss)
+
+        #     summary = tf.Summary(value=[
+        #         tf.Summary.Value(tag="gan_disc_real_loss", simple_value = real_samples_loss[0])
+        #     ])
+        #     fw.add_summary(summary, global_step=epoch)
+        #     break
+
+        # for x, y in discriminator_image_sampler(x_data_gen, generator, HALF_TRAIN_SAMPLES, "training", False):
+        #     generated_samples_loss = discriminator.train_on_batch(x, y)
+        #     print("Discriminator loss on generated images: ", generated_samples_loss)
+        #     summary = tf.Summary(value=[
+        #         tf.Summary.Value(tag="gan_disc_gen_loss", simple_value = generated_samples_loss[0])
+        #     ])
+        #     fw.add_summary(summary, global_step=epoch)
+        #     break
 
 
         print("Training Generator (via cGAN)")
@@ -233,22 +285,38 @@ def train_gan(generator, discriminator, gan, EPOCHS, save_interval, run_name="")
             epochs=1,
             steps_per_epoch= TRAIN_SAMPLES,
             validation_steps=VALIDATION_SAMPLES,
-            callbacks=gan_callbacks )
+            )
 
-        if not epoch % 5:
-            compose_image(generator, "a2.jpg", "./result/run-full/a2-test-%d.jpg" % epoch)
+
+        #image_array = compose_image(generator, "data/r_cropped/real/part-05.png", MODEL_SAMPLES_DIR + "part-05-test-%d.jpg" % epoch, True)
+        summary = tf.Summary(value=[
+            tf.Summary.Value(tag="gan_disc_real_loss", simple_value = real_samples_loss.history["loss"][-1]),
+            tf.Summary.Value(tag="gan_disc_gen_loss", simple_value = generated_samples_loss.history["loss"][-1]),
+            tf.Summary.Value(tag="gan_loss", simple_value = gan_loss.history["loss"][-1]),
+            tf.Summary.Value(tag="gan_val_loss", simple_value = gan_loss.history["val_loss"][-1]),
+        ])
+
+        fw.add_summary(summary, global_step=epoch)
+        fw.flush()
+        fw.close()
+
+
+        compose_image(generator, "a2.jpg", MODEL_SAMPLES_DIR + "a2-test-%d.jpg" % epoch)
+        compose_image(generator, "data/r_cropped/real/part-6350.jpg", MODEL_SAMPLES_DIR + "part-6350-test-%d.jpg" % epoch)
+        compose_image(generator, "data/r_cropped/real/part-6248.jpg", MODEL_SAMPLES_DIR + "part-6248-test-%d.jpg" % epoch)
 
 
         if epoch > 0 and not (epoch % save_interval):
-            save_model(generator, "gan-full-generator-%d.h5" % epoch,"models/gan/")
-            save_model(discriminator, "gan-full-discriminator-%d.h5" % epoch,"models/gan/")
-            save_model(gan, "gan-full-gan-%d.h5" % epoch,"models/gan/")
+            save_model(generator, "gen-%d.h5" % epoch, MODEL_SAVING_DIR)
+            save_model(discriminator, "disc-%d.h5" % epoch, MODEL_SAVING_DIR)
+            gan.save_weights(MODEL_SAVING_DIR+"combined-%d-WEIGHTS.h5" % epoch)
+            save_model(gan, "gan-full-gan-%d.h5" % epoch, MODEL_SAVING_DIR)
 
 
 
-    save_model(generator, "gan-full-generator-final.h5","models/gan/")
-    save_model(discriminator, "gan-full-discriminator-final.h5","models/gan/")
-    save_model(gan, "gan-full-gan-final.h5","models/gan/")
+    save_model(generator, "gen-final.h5",MODEL_SAVING_DIR)
+    save_model(discriminator, "disc-final.h5", MODEL_SAVING_DIR)
+    gan.save_weights(MODEL_SAVING_DIR+"combined-%d-WEIGHTS-final.h5" % epoch)
 
 
 
@@ -260,20 +328,21 @@ def train_gan(generator, discriminator, gan, EPOCHS, save_interval, run_name="")
 if __name__ == '__main__':
 
 
-    TRAIN_DIR = "data/r_cropped"
-    DATAGEN_SEED = 1
-    VALIDATION_SPLIT = 0.2
-
-    IMG_SIZE = 256
-    SAMPLES = 670
-    real_images = []
-
-
     arguments = docopt(__doc__, version="GAN 1.0")
     # print(arguments)
     # exit()
 
     EPOCHS = int(arguments["--epochs"])
+
+    MODEL_SAVING_DIR = "models/gan/"+arguments["--run-name"]
+    if not os.path.exists(MODEL_SAVING_DIR):
+        os.makedirs(MODEL_SAVING_DIR)
+
+    if not os.path.exists(MODEL_SAVING_DIR+"/samples"):
+        os.makedirs(MODEL_SAVING_DIR+"/samples")
+
+    MODEL_SAVING_DIR+="/"
+    MODEL_SAMPLES_DIR = MODEL_SAVING_DIR+"samples/"
 
     custom_objects = get_custom_objects_for_restoring()
 
@@ -298,25 +367,42 @@ if __name__ == '__main__':
         exit()
 
 
-    compose_image(generator, "./data/r_cropped/real/part-05.png", "test.jpg" )
-    exit()
+    # if arguments["--combined-model"]:
+    #     combined_model = restore_model(arguments["--generator"], custom_objects)
+    #     combined_model.summary()
+    #     exit()
+    # else:
 
-    if arguments["--combined-model"]:
-        combined_model = restore_model(arguments["--generator"], custom_objects)
-    else:
+    #     noise_input = Input(shape=(256, 256, 3,), name="combined_noise_input")
+    #     bw_image_input = Input(shape=(256, 256, 3,), name="combined_bw_input")
 
-        noise_input = Input(shape=(256, 256, 3,), name="combined_noise_input")
-        bw_image_input = Input(shape=(256, 256, 3,), name="combined_bw_input")
+    #     gen_img = generator([noise_input, bw_image_input])
 
-        gen_img = generator([noise_input, bw_image_input])
+    #     discriminator.trainable = False
 
-        discriminator.trainable = False
+    #     gan_prediction = discriminator([bw_image_input, gen_img])
 
-        gan_prediction = discriminator([bw_image_input, gen_img])
+    #     combined_model =  Model([noise_input, bw_image_input], gan_prediction)
 
-        combined_model =  Model([noise_input, bw_image_input], gan_prediction)
+    #     combined_model.compile(loss=["binary_crossentropy"], optimizer = get_gan_optimizer())
 
-        combined_model.compile(loss=["binary_crossentropy"], optimizer = get_gan_optimizer())
+
+
+    noise_input = Input(shape=(256, 256, 3,), name="combined_noise_input")
+    bw_image_input = Input(shape=(256, 256, 3,), name="combined_bw_input")
+
+    gen_img = generator([noise_input, bw_image_input])
+
+    discriminator.trainable = False
+
+    gan_prediction = discriminator([bw_image_input, gen_img])
+
+    combined_model =  Model([noise_input, bw_image_input], gan_prediction)
+
+    if arguments["--combined-model-weights"]:
+     combined_model.load_weights(arguments["--combined-model-weights"])
+
+    combined_model.compile(loss=["binary_crossentropy"], optimizer = get_gan_optimizer())
 
 
     train_gan(generator, discriminator, combined_model, EPOCHS, int(arguments["--save-interval"]), arguments["--run-name"])
