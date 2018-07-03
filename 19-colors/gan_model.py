@@ -110,47 +110,46 @@ def build_GAN_discriminator():
         strides=2,
         padding='same',
         name="discr_conv2d_2"))
-    discriminator_model.add(LeakyReLU(0.2, name="discr_leakyReLU_2"))
     discriminator_model.add(BatchNormalization(momentum=0.9,name="discr_bn_1"))
+    discriminator_model.add(LeakyReLU(0.2, name="discr_leakyReLU_2"))
 
     discriminator_model.add(Conv2D(256,
         kernel_size=4,
         strides=2,
         padding='same',
         name="discr_conv2d_3"))
-    discriminator_model.add(LeakyReLU(0.2, name="discr_leakyReLU_3"))
     discriminator_model.add(BatchNormalization(momentum=0.9,name="discr_bn_2"))
+    discriminator_model.add(LeakyReLU(0.2, name="discr_leakyReLU_3"))
 
     discriminator_model.add(Conv2D(512,
         kernel_size=4,
         strides=2,
         padding='same',
         name="discr_conv2d_4"))
-    discriminator_model.add(LeakyReLU(0.2, name="discr_leakyReLU_4"))
     discriminator_model.add(BatchNormalization(momentum=0.9,name="discr_bn_3"))
+    discriminator_model.add(LeakyReLU(0.2, name="discr_leakyReLU_4"))
 
     discriminator_model.add(Conv2D(512,
         kernel_size=4,
         strides=2,
         padding='same',
         name="discr_conv2d_5"))
-    discriminator_model.add(LeakyReLU(0.2, name="discr_leakyReLU_5"))
     discriminator_model.add(BatchNormalization(momentum=0.9,name="discr_bn_4"))
+    discriminator_model.add(LeakyReLU(0.2, name="discr_leakyReLU_5"))
 
     discriminator_model.add(Conv2D(512,
         kernel_size=4,
         strides=2,
         padding='same',
         name="discr_conv2d_6"))
-    discriminator_model.add(LeakyReLU(0.2, name="discr_leakyReLU_6"))
     discriminator_model.add(BatchNormalization(momentum=0.9,name="discr_bn_5"))
+    discriminator_model.add(LeakyReLU(0.2, name="discr_leakyReLU_6"))
 
     discriminator_model.add(Conv2D(1,
         kernel_size=4,
         strides=2,
         padding='same',
         name="discr_conv2d_7"))
-    discriminator_model.add(LeakyReLU(0.2, name="discr_leakyReLU_7"))
     discriminator_model.add(BatchNormalization(momentum=0.9,name="discr_bn_6"))
 
     discriminator_model.add(Flatten())
