@@ -33,8 +33,8 @@ def compose_image(model, inputFile, outputFile, return_data=False):
     img = Image.open(inputFile)
     img_width, img_height = img.size
 
-    h_chunks = int(math.floor(img_width / CHUNK_SIZE))
-    v_chunks = int(math.floor(img_height / CHUNK_SIZE))
+    h_chunks = int(math.ceil(img_width / CHUNK_SIZE))
+    v_chunks = int(math.ceil(img_height / CHUNK_SIZE))
 
     new_img = Image.new('RGB',(h_chunks * CHUNK_SIZE, v_chunks * CHUNK_SIZE))
 
@@ -55,7 +55,6 @@ def compose_image(model, inputFile, outputFile, return_data=False):
             # prediction = model.predict([chunk_array])[0]
             prediction  = (prediction * 255).astype(np.uint8)
             generated_img  = Image.fromarray(prediction)
-
 
             new_img.paste(generated_img,(x * CHUNK_SIZE, y * CHUNK_SIZE))
 
@@ -127,13 +126,12 @@ if __name__ == '__main__':
             o =Image.fromarray(original_imgs[cnt].astype(np.uint8))
 
 
-
+            print(img[0])
             # if the image has been converted to grayscale it has been converted in range 0-1 instead of 0-255
             bw_image = Image.fromarray((img[0]*255).astype(np.uint8))
 
-
-
-            prediction = model.predict(img)[0]
+            noise = generate_noise(1, 256, 3)
+            prediction = model.predict({"gen_noise_input": noise, "gen_bw_input": img })[0]
             prediction  = (prediction * 255).astype(np.uint8)
             generated_img  = Image.fromarray(prediction)
 

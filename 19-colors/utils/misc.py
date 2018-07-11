@@ -5,6 +5,7 @@ import numpy as np
 import keras.backend as K
 
 import os
+import yaml
 from PIL import Image
 
 """
@@ -25,9 +26,9 @@ def l2_loss(y_true, y_pred):
 def wasserstein_loss(y_true, y_pred):
     return K.mean(y_true * y_pred)
 
-def set_trainable(model, status):
-    for layer in model.layers:
-        layer.trainable = status
+def weighted_loss(y_true, y_pred):
+    sq_loss = K.square(y_pred - y_true)
+    return K.mean(sq_loss + (sq_loss * K.abs(y_true)), axis=-1)
 
 def delete_not_256_images(folder):
     cnt = 0
@@ -39,3 +40,15 @@ def delete_not_256_images(folder):
             os.remove(folder+"/"+filename)
             print ("deleted "+folder+"/"+filename+ "size: %dx%d" % (w,h))
             cnt+=1
+
+def merged_discriminator_loss(generated_img, color_image_input):
+
+    diff = l1_loss(color_image_input, generated_img)
+
+    MULTIPLIER = 50
+
+    def loss( y_true, y_pred):
+        return K.binary_crossentropy(y_true, y_pred) + MULTIPLIER * diff
+
+
+    return loss
