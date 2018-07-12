@@ -62,8 +62,8 @@ def build_GAN_generator(depth=10, compiled=False):
             name="img_output"))
 
 
-        noise_input = Input(shape=(256, 256, 3,), name="gen_noise_input")
-        bw_image_input = Input(shape=(256, 256, 3,), name="gen_bw_input")
+        noise_input = Input(shape=INPUT_SHAPE, name="gen_noise_input")
+        bw_image_input = Input(shape=INPUT_SHAPE, name="gen_bw_input")
 
         with tf.name_scope("gen_input_mult"):
             model_input = multiply([noise_input, bw_image_input])
@@ -100,7 +100,7 @@ def build_GAN_discriminator():
     with tf.name_scope("discriminator_model"):
         discriminator_model = Sequential()
 
-        D_INPUT_SHAPE = (256, 256, 3,)
+        D_INPUT_SHAPE = INPUT_SHAPE
 
         discriminator_model.add(Conv2D(64,
             kernel_size=4,
@@ -162,8 +162,8 @@ def build_GAN_discriminator():
         discriminator_model.add(Dense(1, activation='sigmoid',name="discr_classification"))
 
 
-        discr_bw_image_input = Input(shape=(256, 256, 3,), name="discr_bw_input")
-        generated_image_input = Input(shape=(256, 256, 3,), name="generated_image_input")
+        discr_bw_image_input = Input(shape=D_INPUT_SHAPE, name="discr_bw_input")
+        generated_image_input = Input(shape=D_INPUT_SHAPE, name="generated_image_input")
 
 
         with tf.name_scope("discr_input_mult"):
