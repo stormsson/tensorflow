@@ -41,9 +41,12 @@ def delete_not_256_images(folder):
             print ("deleted "+folder+"/"+filename+ "size: %dx%d" % (w,h))
             cnt+=1
 
-def merged_discriminator_loss(generated_img, color_image_input):
 
-    diff = l1_loss(color_image_input, generated_img)
+
+import tensorflow as tf
+def merged_discriminator_loss(color_image_input, generated_img ):
+
+    diff = l2_loss(color_image_input, generated_img)
 
     MULTIPLIER = 50
 

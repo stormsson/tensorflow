@@ -2,9 +2,10 @@
 # -*- coding: UTF-8 -*-
 
 from keras.models import Sequential, Model
-from keras.layers import Dense, Flatten, Input, multiply
+from keras.layers import Dense, Flatten, Input, multiply, concatenate
 from keras.layers import Conv2D, BatchNormalization
 from keras.layers import LeakyReLU
+
 
 import keras
 
@@ -83,6 +84,59 @@ def build_GAN_generator(depth=10, compiled=False):
 
     return composed
 
+def buid_LAB_generator(depth=10):
+
+    LAB_INPUT_SHAPE = ( 256, 256, 1, )
+
+    noise_a_input = Input(shape=LAB_INPUT_SHAPE, name="g_noise_for_a_chan_input")
+    noise_b_input = Input(shape=LAB_INPUT_SHAPE, name="g_noise_for_b_chan_input")
+    l_image_input = Input(shape=LAB_INPUT_SHAPE, name="g_l_chan_input")
+
+    model_a_input = multiply([noise_a_input, l_image_input], name="g_a_chan_input_mult")
+    model_b_input = multiply([noise_b_input, l_image_input], name="g_b_chan_input_mult")
+
+    input_fusion = concatenate([model_a_input, model_b_input], axis=3, name="g_ab_chans_fusion")
+
+    with tf.name_scope("generator_model"):
+        generator_model = Sequential()
+
+        # with tf.name_scope("GENERATOR_MODEL"):
+        generator_model.add(Conv2D(64, kernel_size=3,
+            strides=1,
+            activation='relu',
+            padding='same',
+            input_shape=(256, 256, 2, ),
+            name="gen_conv2d_0" ))
+
+        # [depth] Conv2D Layers
+        for x in xrange(1, depth):
+            generator_model.add(Conv2D(64, kernel_size=3,
+                strides=1,
+                activation='relu',
+                padding='same',
+                name="gen_conv2d_"+str(x)))
+
+            #add batchnorm for each layer except first and last
+
+            generator_model.add(BatchNormalization(momentum=0.9,
+                name="gen_bn_"+str(x)))
+
+        generator_model.add(Conv2D(2, kernel_size=3,
+            strides=1,
+            activation='relu',
+            padding='same',
+            name="img_output"))
+
+        ab_layers = generator_model(input_fusion)
+
+        composed_image = concatenate([l_image_input, ab_layers], axis=3)
+
+        composed =  Model(inputs=[noise_a_input, noise_b_input, l_image_input], outputs=composed_image)
+
+    composed.summary()
+    return composed
+
+
 
 def get_generator_optimizer():
 
@@ -93,6 +147,7 @@ def get_generator_optimizer():
 
     optim = keras.optimizers.Adam(lr=LR, beta_1=B1, beta_2=0.999, epsilon=1e-08, decay=DECAY)
     # optim = keras.optimizers.SGD(lr=LR, decay=1e-07, momentum=MOMENTUM)
+
     return optim
 
 
@@ -172,9 +227,9 @@ def build_GAN_discriminator():
         classification = discriminator_model(model_input)
 
 
-        composed =  Model(inputs=[discr_bw_image_input, generated_image_input], outputs=classification)
+        composed =  Model(inputs=[discr_bw_image_input, generated_image_input], outputs=classification, name="discriminator_model")
 
-        optim = get_generator_optimizer()
+        optim = get_discriminator_optimizer()
 
         losses = [ "binary_crossentropy" ]
         composed.compile(optimizer=optim, loss=losses, metrics=[ "accuracy" ])
@@ -187,12 +242,16 @@ def get_discriminator_optimizer():
     DECAY = 0.0
 
     optim = keras.optimizers.Adam(lr=LR, beta_1=B1, beta_2=0.999, epsilon=1e-08, decay=DECAY)
+    #optim = keras.optimizers.SGD(lr=LR, decay=DECAY, momentum=0.9)
+
     return optim
 
 
-def get_gan_optimizer(LR=0.0002, B1=0.5, DECAY=0.0):
+def get_gan_optimizer(LR=0.0002, B1=0.5, DECAY=0.01):
 
     optim = keras.optimizers.Adam(lr=LR, beta_1=B1, beta_2=0.999, epsilon=1e-08, decay=DECAY)
+
+    #optim = keras.optimizers.SGD(lr=LR, decay=DECAY, momentum=0.9)
     return optim
 
 

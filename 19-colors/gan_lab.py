@@ -38,13 +38,13 @@ import tensorflow as tf
 
 # PROJECT STUFF
 from bcolors import bcolors
-from gan_model import build_GAN_generator, build_GAN_discriminator, get_gan_optimizer, get_custom_objects_for_restoring, get_generator_optimizer
+from gan_model import buid_LAB_generator, build_GAN_generator, build_GAN_discriminator, get_gan_optimizer, get_custom_objects_for_restoring, get_generator_optimizer
 
 from utils.misc import generate_noise, l1_loss, weighted_loss
 from utils.misc import merged_discriminator_loss
 from utils.config import load_configuration_file, save_configuration_file
 from utils.saveload import restore_model, save_model
-from utils.image_sampler import generator_image_sampler, gan_image_sampler
+from utils.image_sampler import generator_image_sampler, discriminator_image_sampler, gan_image_sampler
 from utils.image_sampler import discriminator_image_sampler_with_color_image
 
 from gan_test import compose_image
@@ -66,194 +66,6 @@ HALF_VALIDATION_SAMPLES = int(math.floor(VALIDATION_SAMPLES / 2))
 
 
 arguments = {}
-
-
-def trainDiscriminator(generator, discriminator, arguments):
-    x_data_gen = ImageDataGenerator(
-        #rescale=1./255.0,
-        horizontal_flip=True,
-        validation_split=0.2)
-
-
-    global HALF_TRAIN_SAMPLES
-    global HALF_VALIDATION_SAMPLES
-
-    epochs = arguments["--epochs"]
-    save_interval = int(arguments["--save-interval"])
-    run_name = arguments["--run-name"]
-
-
-    callbacks = get_common_model_callbacks(run_name) + get_discriminator_model_callbacks(save_interval, "gan-discriminator-checkpoint")
-
-    for x in xrange(0, epochs):
-        print("EPOCH %d of %d" % (x+1, epochs))
-        # train on REAL images
-        print("Training on real samples")
-
-        real_samples_loss = discriminator.fit_generator(
-            discriminator_image_sampler(x_data_gen, generator, 1, "training"),
-            validation_data=discriminator_image_sampler(x_data_gen, generator, 1, "validation"),
-            epochs=1,
-            steps_per_epoch= HALF_TRAIN_SAMPLES,
-            validation_steps=HALF_VALIDATION_SAMPLES,
-            callbacks=callbacks)
-
-        # train on GENERATED images
-
-
-
-        # for x, y in discriminator_image_sampler(x_data_gen, generator, HALF_TRAIN_SAMPLES, "training"):
-        #     real_samples_loss = discriminator.train_on_batch(x, y)
-        #     print("Discriminator loss on real images: ", real_samples_loss)
-        #     break
-
-        print("\nTraining on generated samples (progress will not be tracked :( )")
-        # i can't use the generator model tf.graph object inside the python generator to create the images, so
-        # first we create the batch of images, and then manually train on them
-
-        for x, y in discriminator_image_sampler(x_data_gen, generator, HALF_TRAIN_SAMPLES, "training", False):
-            generated_samples_loss = discriminator.train_on_batch(x, y)
-            print("Discriminator loss on generated images: ", generated_samples_loss)
-            break
-
-
-        discriminator_loss = 0.5 * np.add(real_samples_loss.history["loss"][-1], generated_samples_loss[0])
-        print("Discriminator Loss:", discriminator_loss)
-
-
-
-    save_model(discriminator, "gan-discriminator-pretrained.h5","models/gan/")
-
-
-def trainGenerator(generator, arguments ):
-
-
-    x_data_gen = ImageDataGenerator(
-        #rescale=1./255.0,
-        horizontal_flip=True,
-        validation_split=0.2)
-
-    global TRAIN_SAMPLES
-    global VALIDATION_SAMPLES
-    global MODEL_SAMPLES_DIR
-    global MODEL_SAVING_DIR
-
-    epochs = int(arguments["--epochs"])
-    save_interval = int(arguments["--save-interval"])
-    run_name = arguments["--run-name"]
-
-    starting_epoch = int(arguments["--starting-epoch"])
-
-
-    tb_log_dir = "./tensorboard"
-    if(run_name):
-        tb_log_dir+="/"+run_name
-
-    tensorboard_callback = keras.callbacks.TensorBoard(log_dir=tb_log_dir, histogram_freq=0, write_graph=True, write_images=True)
-    earlystop_callback = keras.callbacks.EarlyStopping(monitor="val_l1_loss", patience= 7)
-    reduceLROnPlateau_callback = keras.callbacks.ReduceLROnPlateau(monitor="val_l1_loss", factor=0.1, patience=5, min_lr= 1e-9)
-    model_checkpoint_callback = keras.callbacks.ModelCheckpoint(MODEL_SAVING_DIR+"generator-checkpoint"+"-{epoch:02d}-{val_l1_loss:02f}.h5", period=save_interval, verbose=1)
-
-    callbacks = [ tensorboard_callback, reduceLROnPlateau_callback]
-
-
-    LR = 0.0002
-    B1 = 0.5
-    DECAY = 0.0
-
-    optim = get_generator_optimizer()
-
-    losses = [ weighted_loss ]
-    generator.compile(optimizer=optim, loss=losses, metrics=[ l1_loss ])
-
-
-
-
-    for epoch in xrange(starting_epoch, epochs):
-        fw = tf.summary.FileWriter(logdir="./tensorboard/"+run_name)
-
-        print("EPOCH %d of %d" % (epoch, epochs))
-
-
-        generator_loss = generator.fit_generator(
-            generator_image_sampler(x_data_gen, 1),
-            validation_data=generator_image_sampler(x_data_gen, 1, "validation"),
-            epochs=1,
-            steps_per_epoch= TRAIN_SAMPLES,
-            validation_steps=VALIDATION_SAMPLES,
-            callbacks = callbacks
-            )
-
-
-        summary = tf.Summary(value=[
-            tf.Summary.Value(tag="gen_loss", simple_value = generator_loss.history["loss"][-1]),
-            tf.Summary.Value(tag="gen_val_loss", simple_value = generator_loss.history["val_loss"][-1]),
-        ])
-
-        fw.add_summary(summary, global_step=epoch)
-        fw.flush()
-        fw.close()
-
-
-        if epoch > 0 and not ( epoch % 5):
-            compose_image(generator, "a2.jpg", MODEL_SAMPLES_DIR + "a2-test-%d.jpg" % epoch)
-            compose_image(generator, "data/r_cropped/real/part-6350.jpg", MODEL_SAMPLES_DIR + "part-6350-test-%d.jpg" % epoch)
-
-
-        if epoch > 0 and not (epoch % save_interval):
-            save_model(generator, "gen-%d.h5" % epoch, MODEL_SAVING_DIR)
-
-    save_model(generator, "generator-final.h5",MODEL_SAVING_DIR)
-
-
-def get_discriminator_model_callbacks(save_interval, checkpoint_prefix="gan-model-checkpoint"):
-    global MODEL_SAVING_DIR
-
-    earlystop_callback = keras.callbacks.EarlyStopping(monitor="val_loss", patience= 7)
-    reduceLROnPlateau_callback = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.1, patience=5, min_lr= 1e-9)
-    model_checkpoint_callback = keras.callbacks.ModelCheckpoint(MODEL_SAVING_DIR+checkpoint_prefix+"-{epoch:02d}-{val_loss:02f}.h5", period=save_interval, verbose=1)
-
-    model_callbacks = [  reduceLROnPlateau_callback, model_checkpoint_callback ]
-    return model_callbacks
-
-
-# TODO !!!! TESTARE QUESTO
-
-# def get_generator_model_callbacks(save_interval, checkpoint_prefix="gan-model-checkpoint"):
-#     earlystop_callback = keras.callbacks.EarlyStopping(monitor="val_l1_loss", patience= 7)
-#     reduceLROnPlateau_callback = keras.callbacks.ReduceLROnPlateau(monitor="val_l1_loss", factor=0.1, patience=5, min_lr= 1e-9)
-#     model_checkpoint_callback = keras.callbacks.ModelCheckpoint("models/gan/"+checkpoint_prefix+"-{epoch:02d}-{val_l1_loss:02f}.h5", period=save_interval, verbose=1)
-
-#     model_callbacks = [  reduceLROnPlateau_callback, model_checkpoint_callback]
-#     return model_callbacks
-
-
-"""
-returns all the callbacks common for all models
-"""
-def get_common_model_callbacks(run_name):
-    tb_log_dir = "./tensorboard"
-    if(run_name):
-        tb_log_dir+="/"+run_name
-
-    tensorboard_callback = keras.callbacks.TensorBoard(log_dir=tb_log_dir, histogram_freq=0, write_graph=True, write_images=True)
-
-    model_callbacks = [ tensorboard_callback ]
-    return model_callbacks
-
-def getModelCallbacks(run_name, save_interval,checkpoint_prefix="gan-model-checkpoint"):
-
-    tb_log_dir = "./tensorboard"
-    if(run_name):
-        tb_log_dir+="/"+run_name
-
-    tensorboard_callback = keras.callbacks.TensorBoard(log_dir=tb_log_dir, histogram_freq=0, write_graph=True, write_images=True)
-    earlystop_callback = keras.callbacks.EarlyStopping(monitor="val_l1_loss", patience= 7)
-    reduceLROnPlateau_callback = keras.callbacks.ReduceLROnPlateau(monitor="val_l1_loss", factor=0.1, patience=5, min_lr= 1e-9)
-    model_checkpoint_callback = keras.callbacks.ModelCheckpoint("models/gan/"+checkpoint_prefix+"-{epoch:02d}-{val_l1_loss:02f}.h5", period=save_interval, verbose=1)
-
-    model_callbacks = [ tensorboard_callback, reduceLROnPlateau_callback, model_checkpoint_callback]
-    return model_callbacks
 
 
 def train_gan(generator, discriminator, gan):
@@ -290,8 +102,8 @@ def train_gan(generator, discriminator, gan):
 
     # tensorboard_callback = keras.callbacks.TensorBoard(log_dir=tb_log_dir, histogram_freq=1, write_graph=True, write_images=True)
     from utils.custom_tensorboard_callback import CustomTensorBoard
-    discriminator_tensorboard_callback = CustomTensorBoard(log_dir=tb_log_dir, histogram_freq=0, write_graph=True, write_images=True, starting_epoch=starting_epoch)
-    gan_tensorboard_callback = CustomTensorBoard(log_dir=tb_log_dir, histogram_freq=0, write_graph=True, write_images=True, starting_epoch=starting_epoch)
+    discriminator_tensorboard_callback = CustomTensorBoard(log_dir=tb_log_dir, histogram_freq=5, write_graph=True, write_images=True, starting_epoch=starting_epoch)
+    gan_tensorboard_callback = CustomTensorBoard(log_dir=tb_log_dir, histogram_freq=5, write_graph=True, write_images=True, starting_epoch=starting_epoch)
 
 
     for epoch in xrange(starting_epoch, epochs):
@@ -404,10 +216,10 @@ def train_gan(generator, discriminator, gan):
 
 
         if epoch > 0 and not (epoch % save_interval):
-            save_model(generator, "ep-%d-gen.h5" % epoch, MODEL_SAVING_DIR)
-            save_model(discriminator, "ep-%d-disc.h5" % epoch, MODEL_SAVING_DIR)
-            gan.save_weights(MODEL_SAVING_DIR+"ep-%d-combined-WEIGHTS.h5" % epoch)
-
+            save_model(generator, "gen-%d.h5" % epoch, MODEL_SAVING_DIR)
+            save_model(discriminator, "disc-%d.h5" % epoch, MODEL_SAVING_DIR)
+            gan.save_weights(MODEL_SAVING_DIR+"combined-%d-WEIGHTS.h5" % epoch)
+            save_model(gan, "combined-%d.h5" % epoch, MODEL_SAVING_DIR)
 
 
     save_model(generator, "gen-final.h5",MODEL_SAVING_DIR)
@@ -448,7 +260,7 @@ if __name__ == '__main__':
     if arguments["--generator"]:
         generator = restore_model(arguments["--generator"], custom_objects)
     else:
-        generator = build_GAN_generator()
+        generator = buid_LAB_generator()
 
 
     if(arguments["--train-generator"]):
@@ -465,25 +277,25 @@ if __name__ == '__main__':
         exit()
 
 
-    noise_input = Input(shape=(256, 256, 3,), name="gen_noise_input")
-    bw_image_input = Input(shape=(256, 256, 3,), name="gen_bw_input")
+    noise_input_a = Input(shape=(256, 256, 1,), name="gen_noise_input_a")
+    noise_input_b = Input(shape=(256, 256, 1,), name="gen_noise_input_b")
+    l_input = Input(shape=(256, 256, 1,), name="gen_l_input")
 
     color_image_input = Input(shape=(256, 256, 3,), name="discr_color_input")
 
-    generated_img = generator([noise_input, bw_image_input])
+    generated_img = generator([noise_input_a, noise_input_b, l_input])
 
     discriminator.trainable = False
 
     # gan_prediction = discriminator([bw_image_input, generated_img])
     gan_prediction = discriminator([color_image_input, generated_img])
 
-    combined_model =  Model([noise_input, bw_image_input, color_image_input], gan_prediction, name="gan_model")
+    combined_model =  Model([noise_input_a, noise_input_b, l_input, color_image_input], gan_prediction)
     if arguments["--combined-model-weights"]:
-      combined_model.load_weights(arguments["--combined-model-weights"])
-      print("Restored GAN Weights")
+     combined_model.load_weights(arguments["--combined-model-weights"])
 
     # combined_model.compile(loss=["binary_c rossentropy"], optimizer = get_gan_optimizer())
-    combined_model.compile(loss=[merged_discriminator_loss(color_image_input, generated_img)], optimizer = get_gan_optimizer())
+    combined_model.compile(loss=[merged_discriminator_loss(generated_img, color_image_input)], optimizer = get_gan_optimizer())
 
 
     train_gan(generator, discriminator, combined_model)
