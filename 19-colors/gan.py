@@ -38,14 +38,15 @@ import tensorflow as tf
 
 # PROJECT STUFF
 from bcolors import bcolors
-from gan_model import build_GAN_generator, build_GAN_discriminator, get_gan_optimizer, get_custom_objects_for_restoring, get_generator_optimizer
+from models.gan_rgb import build_GAN_generator, build_GAN_discriminator, get_gan_optimizer, get_generator_optimizer
+from models.common import get_custom_objects_for_restoring
 
 from utils.misc import generate_noise, l1_loss, weighted_loss
 from utils.misc import merged_discriminator_loss
 from utils.config import load_configuration_file, save_configuration_file
 from utils.saveload import restore_model, save_model
-from utils.image_sampler import generator_image_sampler, gan_image_sampler
-from utils.image_sampler import discriminator_image_sampler_with_color_image
+from utils.samplers.image_sampler import generator_image_sampler, gan_image_sampler
+from utils.samplers.image_sampler import discriminator_image_sampler_with_color_image
 
 from gan_test import compose_image
 

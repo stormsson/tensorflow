@@ -21,15 +21,27 @@ from bcolors import bcolors
 
 
 from utils.saveload import restore_model, save_model
-from utils.misc import l1_loss, l2_loss, generate_noise
+from utils.misc import generate_noise
+from models.losses import l1_loss, l2_loss, weighted_loss
 from utils.rgb2lab import extract_L_channel_from_RGB
+
+from utils.img_utils import LAB_RESCALE_FACTOR
+from utils.img_utils import join_and_upscale_lab
 
 from PIL import Image
 import math
 
 CHUNK_SIZE = 256
 
-def compose_image(model, inputFile, outputFile, return_data=False):
+def rescale_prediction(prediction, fromLAB=False):
+
+    if fromLAB:
+        return prediction * LAB_RESCALE_FACTOR
+    else:
+        return (prediction * 255).astype(np.uint8)
+
+
+def compose_image(model, inputFile, outputFile, return_data=False, fromLAB=False):
     img = Image.open(inputFile)
     img_width, img_height = img.size
 
@@ -50,11 +62,38 @@ def compose_image(model, inputFile, outputFile, return_data=False):
             chunk_array = chunk_array / 255.0
 
 
-            noise = generate_noise(1, 256, 3)
-            prediction = model.predict({"gen_noise_input": noise, "gen_bw_input": chunk_array })[0]
+            if not fromLAB:
+                noise = generate_noise(1, 256, 3)
+
+                prediction = model.predict({"gen_noise_input": noise, "gen_bw_input": chunk_array })[0]
+            else:
+                noise_a = generate_noise(1, 256, 1)
+                noise_b = generate_noise(1, 256, 1)
+
+                lab_image = rgb2lab(chunk_array[0])
+
+                rescaled_lab = lab_image / LAB_RESCALE_FACTOR
+                l = rescaled_lab[:, :, 0]
+                l = l.reshape (1, 256, 256, 1)
+
+
+
+                prediction = model.predict( {
+                    "g_noise_for_a_chan_input": noise_a,
+                    "g_noise_for_b_chan_input": noise_b,
+                    "g_l_chan_input":l
+                    })[0]
+
             # prediction = model.predict([chunk_array])[0]
-            prediction  = (prediction * 255).astype(np.uint8)
+
+            prediction = join_and_upscale_lab(l[0], prediction, return_rgb=True)
+
+
+            # prediction  = rescale_prediction(prediction, fromLAB)
+            # prediction = (lab2rgb(prediction) * 255.0).astype(np.uint8)
+
             generated_img  = Image.fromarray(prediction)
+
 
             new_img.paste(generated_img,(x * CHUNK_SIZE, y * CHUNK_SIZE))
 

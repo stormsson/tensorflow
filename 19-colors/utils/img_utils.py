@@ -10,9 +10,44 @@ from os.path import isfile, isdir
 
 import numpy as np
 
+LAB_RESCALE_FACTOR = [100.0, 128.0, 128.0]
+AB_RESCALE_FACTOR = LAB_RESCALE_FACTOR[1:]
+
 def rgb2gray(img):
     return gray2rgb(sk_rgb2gray(img / 255.0))
 
+
+def join_and_upscale_lab(l, ab, return_rgb=False):
+
+    lab = np.concatenate((l, ab), axis=2)
+
+
+    lab[:, :, 1] *= 2.0
+    lab[:, :, 1] -= 1.0
+
+    lab[:, :, 2] *= 2.0
+    lab[:, :, 2] -= 1.0
+
+    lab = lab * LAB_RESCALE_FACTOR
+
+    if return_rgb:
+        lab = (lab2rgb(lab) * 255.0).astype(np.uint8)
+
+
+    return lab
+
+
+def split_and_downscale_lab(lab):
+    lab = lab / LAB_RESCALE_FACTOR
+    lab[:, :, 1] += 1.0
+    lab[:, :, 1] /= 2.0
+
+    lab[:, :, 2] += 1.0
+    lab[:, :, 2] /= 2.0
+
+    l = lab[:, :, 0].reshape( lab[:, :, 0].shape +(1,))
+
+    return l, lab[:, :, 1:]
 
 
 class color_manager(object):
