@@ -38,7 +38,8 @@ IMG_HEIGHT = 286
 IMG_SIZE = ( 60, 45, 1 )
 IMG_SIZE = ( 143, 192, 1 )
 IMG_SIZE = ( IMG_HEIGHT, IMG_WIDTH, 1 )
-
+print(model.summary())
+exit()
 
 img = Image.open(image_path)
 img.load()

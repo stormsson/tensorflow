@@ -1,0 +1,1 @@
+docker run --rm -v "/Users/ccamarda/Sites/cyclegan:/var/project" tf_keras:latest python main.py
