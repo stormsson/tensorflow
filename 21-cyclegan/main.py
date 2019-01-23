@@ -15,6 +15,7 @@ from keras.layers import Activation
 
 from keras.preprocessing.image import ImageDataGenerator
 
+from PIL import Image
 
 
 
@@ -374,10 +375,30 @@ if __name__ == '__main__':
         end = time.time()
         print("Iteration time: %s s" % (end-start))
         sys.stdout.flush()
+
+        if True or not (it % SAVE_IMAGES_INTERVAL ):
+            imgA = real_A
+            print(imgA.shape)
+            imga2b = generator_AtoB.predict(imgA)
+            print(imga2b.shape)
+            imga2b2a = generator_BtoA.predict(imga2b)
+            print(imga2b2a.shape)
+            imgB = real_B
+            imgb2a = generator_BtoA.predict(imgB)
+            imgb2a2b = generator_AtoB.predict(imgb2a)
+
+            c = np.concatenate([imgA, imga2b, imga2b2a, imgB, imgb2a, imgb2a2b], axis=1)
+            print(c.shape)
+            x = Image.fromarray(c[0])
+            x.save("iteration_%s.jpg" % it)
+            #x = Image.new("RGB",size=(6*IMG_WIDTH,IMG_HEIGHT))
+
+            exit()
+
+
+            pass
         it+=1
 
-        if not (it % SAVE_IMAGES_INTERVAL ):
-            pass
 
 
 
