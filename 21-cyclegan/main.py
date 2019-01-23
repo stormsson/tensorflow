@@ -376,7 +376,7 @@ if __name__ == '__main__':
         print("Iteration time: %s s" % (end-start))
         sys.stdout.flush()
 
-        if True or not (it % SAVE_IMAGES_INTERVAL ):
+        if not (it % SAVE_IMAGES_INTERVAL ):
             imgA = real_A
             print(imgA.shape)
             imga2b = generator_AtoB.predict(imgA)
@@ -387,16 +387,11 @@ if __name__ == '__main__':
             imgb2a = generator_BtoA.predict(imgB)
             imgb2a2b = generator_AtoB.predict(imgb2a)
 
-            c = np.concatenate([imgA, imga2b, imga2b2a, imgB, imgb2a, imgb2a2b], axis=1)
+            c = np.concatenate([imgA, imga2b, imga2b2a, imgB, imgb2a, imgb2a2b], axis=2).astype(np.uint8)
             print(c.shape)
             x = Image.fromarray(c[0])
-            x.save("iteration_%s.jpg" % it)
-            #x = Image.new("RGB",size=(6*IMG_WIDTH,IMG_HEIGHT))
+            x.save("data/generated/iteration_%s.jpg" % it)
 
-            exit()
-
-
-            pass
         it+=1
 
 
