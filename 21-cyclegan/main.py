@@ -2,7 +2,11 @@
 # -*- coding: UTF-8 -*-
 
 # https://hardikbansal.github.io/CycleGANBlog/
+import sys
+import time
 
+import numpy as np
+import keras
 from keras.models import Sequential, Model
 from keras.layers import Dense, Flatten, Input, multiply, add as kadd
 from keras.layers import Conv2D, BatchNormalization, Conv2DTranspose
@@ -11,8 +15,8 @@ from keras.layers import Activation
 
 from keras.preprocessing.image import ImageDataGenerator
 
-import keras
-import numpy as np
+
+
 
 ngf = 32 # Number of filters in first layer of generator
 ndf = 64 # Number of filters in first layer of discriminator
@@ -25,7 +29,7 @@ IMG_DEPTH = 3 # RGB format
 DISCRIMINATOR_ITERATIONS = 1
 SAVE_IMAGES_INTERVAL = 5
 
-ITERATIONS = 10
+ITERATIONS = 100
 FAKE_POOL_SIZE=25
 INPUT_SHAPE = (IMG_WIDTH, IMG_HEIGHT, IMG_DEPTH)
 
@@ -177,8 +181,6 @@ def createImageGenerator( subset="train", data_type="A", batch_size=1, pp=None):
 
 if __name__ == '__main__':
 
-    model = Sequential()
-
     generator_AtoB = generator(name="gen_A")
     generator_BtoA = generator(name="gen_B")
 
@@ -251,18 +253,23 @@ if __name__ == '__main__':
     optim = keras.optimizers.Adam(lr=0.0002, beta_1=0.5, beta_2=0.999, epsilon=1e-08)
 
 
-
-    generator_trainer =  Model([input_A, input_B],
-                     [discriminator_generated_B,   discriminator_generated_A,
-                     cyc_A,      cyc_B,
-                     generated_B,     generated_A ]
-                     )
-
     # cyclic error is increased, because it's more important
     cyclic_weight_multipier = 10
 
-    losses =         [ "MSE", "MSE", "MAE",                   "MAE",                    "MAE", "MAE"]
-    losses_weights = [ 1,     1,     cyclic_weight_multipier, cyclic_weight_multipier,  1,     1    ]
+    # generator_trainer =  Model([input_A, input_B],
+    #                  [discriminator_generated_B,   discriminator_generated_A,
+    #                  cyc_A,      cyc_B,
+    #                  generated_B,     generated_A ]
+    #                  )
+    # losses =         [ "MSE", "MSE", "MAE",                   "MAE",                    "MAE", "MAE"]
+    # losses_weights = [ 1,     1,     cyclic_weight_multipier, cyclic_weight_multipier,  1,     1    ]
+
+    generator_trainer =  Model([input_A, input_B],
+                 [discriminator_generated_B,   discriminator_generated_A,
+                 cyc_A,      cyc_B,])
+
+    losses =         [ "MSE", "MSE", "MAE",                   "MAE"]
+    losses_weights = [ 1,     1,     cyclic_weight_multipier, cyclic_weight_multipier]
 
     generator_trainer.compile(optimizer=optim, loss = losses, loss_weights=losses_weights)
 
@@ -308,7 +315,6 @@ if __name__ == '__main__':
     zeros = np.zeros((BATCH_SIZE,)+ generator_trainer.output_shape[0][1:])
 
 
-
     train_A_image_generator = createImageGenerator("train", "A")
     # print(train_A_image_generator.next())
     # for c in train_A_image_generator:
@@ -317,14 +323,14 @@ if __name__ == '__main__':
     # exit()
 
     train_B_image_generator = createImageGenerator("train", "B")
-    test_A_image_generator = createImageGenerator("test", "A")
-    test_B_image_generator = createImageGenerator("test", "B")
+    # test_A_image_generator = createImageGenerator("test", "A")
+    # test_B_image_generator = createImageGenerator("test", "B")
 
     it = 1
     while it  < ITERATIONS:
-        print("Iteration %d " % it)
-
-
+        start = time.time()
+        print("\nIteration %d " % it)
+        sys.stdout.flush()
 
         # THIS ONLY WORKS IF BATCH SIZE == 1
         real_A = train_A_image_generator.next()
@@ -345,15 +351,35 @@ if __name__ == '__main__':
 
 
         for x in range(0, DISCRIMINATOR_ITERATIONS):
-            _, D_loss_real_A, D_loss_fake_A, D_loss_real_B, D_loss_fake_B = disc_trainer.train_on_batch(
+            _, D_loss_real_A, D_loss_fake_A, D_loss_real_B, D_loss_fake_B = \
+            disc_trainer.train_on_batch(
                 [real_A, fake_A, real_B, fake_B],
                 [zeros, ones * 0.9, zeros, ones * 0.9] )
 
 
+        print("=====")
         print("Discriminator loss:")
-        print("Real A: %s, Fake A: %s, Real B: %s, Fake B: %s " % ( D_loss_real_A, D_loss_fake_A, D_loss_real_B, D_loss_fake_B))
-        exit()
+        print("Real A: %s, Fake A: %s || Real B: %s, Fake B: %s " % ( D_loss_real_A, D_loss_fake_A, D_loss_real_B, D_loss_fake_B))
+
+        _, G_loss_fake_B, G_loss_fake_A, G_loss_rec_A, G_loss_rec_B = \
+            generator_trainer.train_on_batch(
+                [real_A, real_B],
+                [zeros, zeros, real_A, real_B])
+
+
+        print("=====")
+        print("Generator loss:")
+        print("Fake B: %s, Cyclic A: %s || Fake A: %s, Cyclic B: %s " % (G_loss_fake_B, G_loss_rec_A, G_loss_fake_A, G_loss_rec_B))
+
+        end = time.time()
+        print("Iteration time: %s s" % (end-start))
+        sys.stdout.flush()
         it+=1
+
+        if not (it % SAVE_IMAGES_INTERVAL ):
+            pass
+
+
 
      # lmbd = 10.0,
      #    idloss=1.0,
