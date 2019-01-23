@@ -7,6 +7,7 @@ from keras.models import Sequential, Model
 from keras.layers import Dense, Flatten, Input, multiply, add as kadd
 from keras.layers import Conv2D, BatchNormalization, Conv2DTranspose
 from keras.layers import LeakyReLU, ReLU
+from keras.layers import Activation
 
 from keras.preprocessing.image import ImageDataGenerator
 
@@ -54,19 +55,21 @@ def resnet_block(num_features):
 
 def discriminator( f=4, name=None):
     d = Sequential()
-    d.add(Conv2D(ndf, kernel_size=f, strides=2, padding="SAME"))
+    d.add(Conv2D(ndf, kernel_size=f, strides=2, padding="SAME", name="discr_conv2d_1"))
     d.add(BatchNormalization())
     d.add(LeakyReLU(0.2))
-    d.add(Conv2D(ndf * 2, kernel_size=f, strides=2, padding="SAME"))
+    d.add(Conv2D(ndf * 2, kernel_size=f, strides=2, padding="SAME", name="discr_conv2d_2"))
     d.add(BatchNormalization())
     d.add(LeakyReLU(0.2))
-    d.add(Conv2D(ndf * 4, kernel_size=f, strides=2, padding="SAME"))
+    d.add(Conv2D(ndf * 4, kernel_size=f, strides=2, padding="SAME", name="discr_conv2d_3"))
     d.add(BatchNormalization())
     d.add(LeakyReLU(0.2))
-    d.add(Conv2D(ndf * 8, kernel_size=f, strides=2, padding="SAME"))
+    d.add(Conv2D(ndf * 8, kernel_size=f, strides=2, padding="SAME", name="discr_conv2d_4"))
     d.add(BatchNormalization())
     d.add(LeakyReLU(0.2))
-    d.add(Conv2D(1, kernel_size=f, strides=1, padding="SAME"))
+    d.add(Conv2D(1, kernel_size=f, strides=1, padding="SAME", name="discr_conv2d_out"))
+
+    # d.add(Activation("sigmoid"))
 
 
     model_input = Input(shape=INPUT_SHAPE)
@@ -74,6 +77,9 @@ def discriminator( f=4, name=None):
     decision  = d(model_input)
 
     composed = Model(model_input, decision)
+    # print(d.output_shape)
+    # d.summary()
+
     return composed
 
 def generator(name=None):
@@ -298,8 +304,10 @@ if __name__ == '__main__':
     fake_B_pool = []
 
 
-    ones = np.ones(BATCH_SIZE)
-    zeros = np.zeros(BATCH_SIZE)
+    ones = np.ones((BATCH_SIZE,)+ generator_trainer.output_shape[0][1:])
+    zeros = np.zeros((BATCH_SIZE,)+ generator_trainer.output_shape[0][1:])
+
+
 
     train_A_image_generator = createImageGenerator("train", "A")
     # print(train_A_image_generator.next())
@@ -335,14 +343,11 @@ if __name__ == '__main__':
         fake_A = np.array(fake_A)
         fake_B = np.array(fake_B)
 
-        print(fake_A)
-        exit()
 
         for x in range(0, DISCRIMINATOR_ITERATIONS):
-            D_loss_real_A, D_loss_fake_A, D_loss_real_B, D_loss_fake_B = \
-              disc_trainer.train_on_batch(
+            _, D_loss_real_A, D_loss_fake_A, D_loss_real_B, D_loss_fake_B = disc_trainer.train_on_batch(
                 [real_A, fake_A, real_B, fake_B],
-                [zeros, ones * 0.9, zeros, ones * 0.9])
+                [zeros, ones * 0.9, zeros, ones * 0.9] )
 
 
         print("Discriminator loss:")
