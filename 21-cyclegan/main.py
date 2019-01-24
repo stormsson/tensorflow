@@ -28,9 +28,9 @@ IMG_HEIGHT = 256 # Input image will be of height 256
 IMG_DEPTH = 3 # RGB format
 
 DISCRIMINATOR_ITERATIONS = 1
-SAVE_IMAGES_INTERVAL = 5
+SAVE_IMAGES_INTERVAL = 25
 
-ITERATIONS = 100
+ITERATIONS = 5000
 FAKE_POOL_SIZE=25
 INPUT_SHAPE = (IMG_WIDTH, IMG_HEIGHT, IMG_DEPTH)
 
@@ -152,13 +152,16 @@ def generator(name=None):
 def fromMinusOneToOne(x):
     return x/127.5 -1
 
+def toRGB(x):
+    return (1+x) * 127.5
+
 
 def createImageGenerator( subset="train", data_type="A", batch_size=1, pp=None):
 
     # we create two instances with the same arguments
     data_gen_args = dict(
                          # rescale = 1./127.5,
-                         rotation_range=5.,
+                         # rotation_range=5.,
                          preprocessing_function= pp,
                          # width_shift_range=0.1,
                          # height_shift_range=0.1,
@@ -335,6 +338,7 @@ if __name__ == '__main__':
 
         # THIS ONLY WORKS IF BATCH SIZE == 1
         real_A = train_A_image_generator.next()
+
         real_B = train_B_image_generator.next()
 
         fake_A_pool.extend(generator_BtoA.predict(real_B))
@@ -378,21 +382,25 @@ if __name__ == '__main__':
 
         if not (it % SAVE_IMAGES_INTERVAL ):
             imgA = real_A
-            print(imgA.shape)
+            # print(imgA.shape)
             imga2b = generator_AtoB.predict(imgA)
-            print(imga2b.shape)
+            # print(imga2b.shape)
             imga2b2a = generator_BtoA.predict(imga2b)
-            print(imga2b2a.shape)
+            # print(imga2b2a.shape)
             imgB = real_B
             imgb2a = generator_BtoA.predict(imgB)
             imgb2a2b = generator_AtoB.predict(imgb2a)
 
             c = np.concatenate([imgA, imga2b, imga2b2a, imgB, imgb2a, imgb2a2b], axis=2).astype(np.uint8)
-            print(c.shape)
+            # print(c.shape)
             x = Image.fromarray(c[0])
-            x.save("data/generated/iteration_%s.jpg" % it)
+            x.save("data/generated/iteration_%s.jpg" % str(it).zfill(4))
 
         it+=1
+
+
+        generator_AtoB.save("models/generator_AtoB.h5")
+        generator_BtoA.save("models/generator_BtoA.h5")
 
 
 
