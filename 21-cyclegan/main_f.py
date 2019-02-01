@@ -18,7 +18,7 @@ from keras.layers.merge import Add
 from keras.layers import Conv2D, BatchNormalization, Conv2DTranspose
 from keras.layers import LeakyReLU, ReLU
 from keras.layers import Activation
-from keras..initializers import RandomNormal
+from keras.initializers import RandomNormal
 
 from keras.preprocessing.image import ImageDataGenerator
 
@@ -30,7 +30,7 @@ from custom_layers import ReflectionPadding2D
 
 
 # NET PARAMETERS
-ngf = 32 # Number of filters in first layer of generator
+ngf = 64 # Number of filters in first layer of generator
 ndf = 64 # Number of filters in first layer of discriminator
 BATCH_SIZE = 1 # batch_size
 pool_size = 50 # pool_size
@@ -39,7 +39,7 @@ IMG_HEIGHT = 256 # Input image will be of height 256
 IMG_DEPTH = 3 # RGB format
 INPUT_SHAPE = (IMG_WIDTH, IMG_HEIGHT, IMG_DEPTH)
 
-USE_IDENTITY_LOSS = True
+USE_IDENTITY_LOSS = False
 
 
 # TRAINING PARAMETERS
@@ -57,20 +57,20 @@ DATASET="horse2zebra"
 
 resnet_block_cnt = 1
 
-def resnet_block(input, num_features):
+def resnet_block(model_input, num_features):
     global resnet_block_cnt
     with K.name_scope('resnet_block_%s' % resnet_block_cnt):
 
-        # x = ReflectionPadding2D()(input)
-        x = Conv2D(num_features, kernel_size=3, strides=1, padding="SAME")(input)
-        # x = InstanceNormalization()(x)
-        # x = ReLU()(x)
+        # x = ReflectionPadding2D()(model_input)
+        x = Conv2D(num_features, kernel_size=3, strides=1, padding="same")(model_input)
+        x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
+        x = Activation("relu")(x)
 
 
-        x = Conv2D(num_features, kernel_size=3, strides=1, padding="SAME")(x)
-        # x = InstanceNormalization()(x)
+        x = Conv2D(num_features, kernel_size=3, strides=1, padding="same")(x)
+        x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
 #
-        _sum = Add()([input, x])
+        _sum = Add()([model_input, x])
 
     resnet_block_cnt+=1
     return _sum
@@ -81,122 +81,124 @@ def discriminator(input_shape, f=4, name=None):
 
     with K.name_scope('discriminator_'+name):
 
-        input = Input(input_shape, name="discriminator_"+name+"_input")
-        x = Conv2D(ndf, kernel_size=f, strides=2, padding="same", name="discr_"+name+"_conv2d_1")(input)
-
-        # x = BatchNormalization()(x)
+        model_input = Input(shape=input_shape, name=name+"_input")
+        x = Conv2D(ndf, kernel_size=f, strides=2, padding="same")(model_input)
         x = LeakyReLU(0.2)(x)
 
-        x = Conv2D(ndf * 2, kernel_size=f, strides=2, padding="same", name="discr_"+name+"_conv2d_2")(x)
-        # x = BatchNormalization()(x)
-        x = LeakyReLU(0.2)(x)
+        # ===
+        x = Conv2D(ndf * 2, kernel_size=f, strides=2, padding="same")(x)
+        x = InstanceNormalization(axis=3)(x)
         #x = Dropout(0.3)(x)
-
-
-        x = Conv2D(ndf * 4, kernel_size=f, strides=2, padding="same", name="discr_"+name+"_conv2d_3")(x)
-        # x = BatchNormalization()(x)
         x = LeakyReLU(0.2)(x)
+
+
+        x = Conv2D(ndf * 4, kernel_size=f, strides=2, padding="same")(x)
+        x = InstanceNormalization(axis=3)(x)
         #x = Dropout(0.3)(x)
-
-
-        x = Conv2D(ndf * 8, kernel_size=f, strides=2, padding="same", name="discr_"+name+"_conv2d_4")(x)
-        # x = BatchNormalization()(x)
         x = LeakyReLU(0.2)(x)
 
-        x = Conv2D(1, kernel_size=f, strides=1, padding="same", name="discr_"+name+"_conv2d_out")(x)
 
-        # d.add(Activation("sigmoid"))
+        x = Conv2D(ndf * 8, kernel_size=f, strides=2, padding="same")(x)
+        x = InstanceNormalization(axis=3)(x)
+        x = LeakyReLU(0.2)(x)
 
-    # print(d.output_shape)
-    # d.summary()
-    composed = Model(input, x, name=name)
-    # composed.summary()
-    return composed
+        # ===
 
-def generator(input_shape, name=None):
+        x = Conv2D(1, kernel_size=f, strides=1, padding="same", name=name+"_out_layer")(x)
 
-    with K.name_scope('generator_'+name):
+        x = Activation('sigmoid')(x)
 
-        # ENCODER
-        input = Input(input_shape, name="generator_"+name+"_input")
-
-        # x = ReflectionPadding2D()(input)
-        x = Conv2D(ngf, kernel_size=7,
-                strides=1,
-                # activation='relu',
-                padding='same',
-                kernel_initializer=RandomNormal(0, 0.02),
-                bias_initializer='zeros',
-                input_shape=INPUT_SHAPE,
-                name="encoder_"+name+"_0" )(input)
-
-        x = BatchNormalization(axis=3)(x)
-        #x = LeakyReLU(0.2)(x)
-
-
-        x = Conv2D(64*2, kernel_size=3,
-                strides=2,
-                padding='same',
-                kernel_initializer=RandomNormal(0, 0.02),
-                bias_initializer='zeros',
-                name="encoder_"+name+"_1" )(x)
-        x = BatchNormalization(axis=3)(x)
-        #x = LeakyReLU(0.2)(x)
-
-        # output shape = (128, 128, 128)
-
-        # g.add(ReflectionPadding2D())
-
-        x = Conv2D(64*4, kernel_size=3,
-                strides=2,
-                padding="same",
-                kernel_initializer=RandomNormal(0, 0.02),
-                bias_initializer='zeros',
-                name="encoder_"+name+"_2",
-                )(x)
-
-        x = BatchNormalization(axis=3)(x)
-        #x = LeakyReLU(0.2)(x)
-        # # output shape = (64, 64, 256)
-
-        # # END ENCODER
-
-
-
-        # # TRANSFORM
-
-        x = resnet_block(x, 64 * 4)
-        x = resnet_block(x, 64 * 4)
-        x = resnet_block(x, 64 * 4)
-        x = resnet_block(x, 64 * 4)
-        x = resnet_block(x, 64 * 4)
-        x = resnet_block(x, 64 * 4)
-
-
-        # # END TRANSFORM
-        # # generator.shape = (64, 64, 256)
-
-        # # DECODER
-        x = Conv2DTranspose(ngf*2,kernel_size=3, strides=2, padding="SAME")(x)
-        # x = BatchNormalization()(x)
-        # x = ReLU()(x)
-
-        x = Conv2DTranspose(ngf,kernel_size=3, strides=2, padding="SAME")(x)
-        # x = BatchNormalization()(x)
-        # x = ReLU()(x)
-
-        x = Conv2D(3,kernel_size=7, strides=1, padding="SAME", name="generator_out_layer")(x)
-
-        #x = Activation('tanh')(x)
-        # exit()
-        # END DECODER
-
-
-
-    composed = Model(input, x, name=name)
+        # print(d.output_shape)
+        # d.summary()
+    composed = Model(model_input, x, name=name)
     # composed.summary()
 
     return composed
+
+def generator(input_shape, name):
+
+    # with K.name_scope('generator_'+name):
+
+    # ENCODER
+    model_input = Input(shape=input_shape, name=name+"_input")
+
+    # x = ReflectionPadding2D()(input)
+    x = Conv2D(ngf, kernel_size=7,
+            strides=1,
+            # activation='relu',
+            padding='same',
+            kernel_initializer=RandomNormal(0, 0.02),
+            bias_initializer='zeros',
+            input_shape=INPUT_SHAPE,
+            name="encoder_"+name+"_0" )(model_input)
+
+
+    x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
+    #x = LeakyReLU(0.2)(x)
+    # x = Activation("relu")(x)
+
+    x = Conv2D(64*2, kernel_size=3,
+            strides=2,
+            padding='same',
+            kernel_initializer=RandomNormal(0, 0.02),
+            bias_initializer='zeros',
+            name="encoder_"+name+"_1" )(x)
+    x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
+    #x = LeakyReLU(0.2)(x)
+    # x = Activation("relu")(x)
+    # output shape = (128, 128, 128)
+
+    # g.add(ReflectionPadding2D())
+
+    x = Conv2D(64*4, kernel_size=3,
+            strides=2,
+            padding="same",
+            kernel_initializer=RandomNormal(0, 0.02),
+            bias_initializer='zeros',
+            name="encoder_"+name+"_2",
+            )(x)
+
+    x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
+    #x = LeakyReLU(0.2)(x)
+    # x = Activation("relu")(x)
+    # output shape = (64, 64, 256)
+
+    # # END ENCODER
+
+
+
+    # # TRANSFORM
+
+    x = resnet_block(x, 64 * 4)
+    x = resnet_block(x, 64 * 4)
+    x = resnet_block(x, 64 * 4)
+    x = resnet_block(x, 64 * 4)
+    x = resnet_block(x, 64 * 4)
+    x = resnet_block(x, 64 * 4)
+
+
+    # # END TRANSFORM
+    # # generator.shape = (64, 64, 256)
+
+    # # DECODER
+    x = Conv2DTranspose(ngf*2,kernel_size=3, strides=2, padding="same")(x)
+    # x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
+    # x = ReLU()(x)
+
+    x = Conv2DTranspose(ngf,kernel_size=3, strides=2, padding="same")(x)
+    # x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
+    # x = ReLU()(x)
+
+    x = Conv2D(3, kernel_size=7, strides=1, padding="same", name=name+"_out_layer")(x)
+    x = Activation('relu')(x)
+    # exit()
+    # END DECODER
+
+
+    composed = Model(model_input, x, name=name)
+        # composed.summary()
+
+    return composed, model_input, x
 
 
 def fromMinusOneToOne(x):
@@ -306,7 +308,7 @@ def fit(
         fake_A = np.array(fake_A)
         fake_B = np.array(fake_B)
 
-
+        disc_trainer.trainable = True
         for x in range(0, DISCRIMINATOR_ITERATIONS):
             _, D_loss_real_A, D_loss_fake_A, D_loss_real_B, D_loss_fake_B = \
             disc_trainer.train_on_batch(
@@ -314,7 +316,7 @@ def fit(
                 [ noisy_ones , noisy_zeros, noisy_ones , noisy_zeros] )
 
 
-
+        disc_trainer.trainable = False
         print("=====")
         print("Discriminator loss:")
         print("Real A: %s, Fake A: %s || Real B: %s, Fake B: %s " % ( D_loss_real_A, D_loss_fake_A, D_loss_real_B, D_loss_fake_B))
@@ -428,8 +430,9 @@ def fit(
 if __name__ == '__main__':
 
 
-    generator_AtoB = generator(INPUT_SHAPE, name="gen_A")
-    generator_BtoA = generator(INPUT_SHAPE, name="gen_B")
+    generator_AtoB, input_A, generated_B = generator(INPUT_SHAPE, name="gen_AToB")
+
+    generator_BtoA, input_B, generated_A = generator(INPUT_SHAPE, name="gen_BToA")
 
     discriminator_A = discriminator(INPUT_SHAPE, name="disc_A")
     discriminator_B = discriminator(INPUT_SHAPE, name="disc_B")
@@ -439,14 +442,14 @@ if __name__ == '__main__':
     ### GENERATOR TRAINING
     optim = keras.optimizers.Adam(lr=0.0002, beta_1=0.5, beta_2=0.999, epsilon=1e-08)
 
-    input_A = Input(batch_shape=(None, IMG_WIDTH, IMG_HEIGHT, IMG_DEPTH), name="gt_input_real_A")
-    generated_B = generator_AtoB(input_A)
+    # input_A = Input(batch_shape=(None, IMG_WIDTH, IMG_HEIGHT, IMG_DEPTH), name="gt_input_real_A")
+    # generated_B = generator_AtoB(input_A)
     discriminator_generated_B = discriminator_B(generated_B)
     cyc_A = generator_BtoA(generated_B)
 
 
-    input_B = Input(batch_shape=(None, IMG_WIDTH, IMG_HEIGHT, IMG_DEPTH), name="gt_input_real_B")
-    generated_A = generator_BtoA(input_B)
+    # input_B = Input(batch_shape=(None, IMG_WIDTH, IMG_HEIGHT, IMG_DEPTH), name="gt_input_real_B")
+    # generated_A = generator_BtoA(input_B)
     discriminator_generated_A = discriminator_A(generated_A )
     cyc_B = generator_AtoB(generated_A)
 
