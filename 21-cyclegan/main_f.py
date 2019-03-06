@@ -31,17 +31,20 @@ from keras.utils import multi_gpu_model
 from custom_layers import ReflectionPadding2D
 
 
+
 # NET PARAMETERS
 ngf = 64 # Number of filters in first layer of generator
 ndf = 64 # Number of filters in first layer of discriminator
 BATCH_SIZE = 1 # batch_size
 pool_size = 50 # pool_size
-IMG_WIDTH = 256 # Imput image will of width 256
-IMG_HEIGHT = 256 # Input image will be of height 256
+IMG_WIDTH = 128 # Imput image will of width 256
+IMG_HEIGHT = 128 # Input image will be of height 256
 IMG_DEPTH = 3 # RGB format
 INPUT_SHAPE = (IMG_WIDTH, IMG_HEIGHT, IMG_DEPTH)
 
-USE_IDENTITY_LOSS = False
+USE_IDENTITY_LOSS = True
+CYCLIC_LOSS_MULTIPLIER =  10
+IDENTITY_LOSS_MULTIPLIER = CYCLIC_LOSS_MULTIPLIER / 2
 
 IMAGE_RANGE_0_255 = False
 
@@ -49,7 +52,7 @@ IMAGE_RANGE_0_255 = False
 # TRAINING PARAMETERS
 ITERATIONS = 5500000
 DISCRIMINATOR_ITERATIONS = 1
-SAVE_IMAGES_INTERVAL = 100
+SAVE_IMAGES_INTERVAL = 10
 
 SAVE_MODEL_INTERVAL = 1000
 
@@ -61,19 +64,25 @@ DATASET="horse2zebra"
 
 resnet_block_cnt = 1
 
-def resnet_block(model_input, num_features):
+def resnet_block(model_input, num_features, use_dropout=False):
     global resnet_block_cnt
     with K.name_scope('resnet_block_%s' % resnet_block_cnt):
 
         x = ReflectionPadding2D()(model_input)
-        x = Conv2D(num_features, kernel_size=3, strides=1, padding="valid")(x)
-        x = InstanceNormalization(axis=3,epsilon=1e-5, gamma_initializer=RandomNormal(1., 0.02))(x)
+        x = Conv2D(num_features, kernel_size=3, strides=1, padding="valid", kernel_initializer=RandomNormal(0., 0.02))(x)
+        # x = InstanceNormalization(gamma_initializer=RandomNormal(1., 0.02))(x)
+        x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
         x = Activation("relu")(x)
+
+        if use_dropout:
+            x = Dropout(0.5)(x)
 
 
         x = ReflectionPadding2D( )(x)
-        x = Conv2D(num_features, kernel_size=3, strides=1, padding="valid")(x)
-        x = InstanceNormalization(axis=3,epsilon=1e-5, gamma_initializer=RandomNormal(1., 0.02))(x)
+        x = Conv2D(num_features, kernel_size=3, strides=1, padding="valid", kernel_initializer=RandomNormal(0., 0.02))(x)
+        # x = InstanceNormalization(gamma_initializer=RandomNormal(1., 0.02))(x)
+        x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
+
 
         _sum = Add()([model_input, x])
 
@@ -81,11 +90,35 @@ def resnet_block(model_input, num_features):
     resnet_block_cnt+=1
     return _sum
 
-def scaleup(input_tensor, ngf):
-    x = UpSampling2D(size=2)(input_tensor)
-    x = Conv2D(ngf, kernel_size=3, strides=1, padding="same")(x)
+def scaleup(input_tensor, ngf, method="upsampling2d"):
+    if method == "upsampling2d":
+        x = UpSampling2D(size=2)(input_tensor)
+        x = Conv2D(ngf, kernel_size=3, strides=1, padding="same")(x)
+    else:
+        x = Conv2DTranspose(ngf,kernel_size=3, strides=2, padding="same")(x)
+        x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
+        x = Activation("relu")(x)
 
     return x
+
+def pixel_discriminator(input_shape, name=None ):
+
+    with K.name_scope(name):
+        model_input = Input(shape=input_shape, name=name+"_input")
+        x = Conv2D(ndf, kernel_size=1, strides=1, padding="same")(model_input)
+        x = LeakyReLU(0.2)(x)
+
+        x = Conv2D(ndf*2, kernel_size=1, strides=1, padding="same")(x)
+        x = BatchNormalization(axis=3)(x)
+        x = LeakyReLU(0.2)(x)
+
+        x = Conv2D(1, kernel_size=1, strides=1, padding="same")(x)
+
+    composed = Model(model_input, x, name=name)
+    composed.summary()
+
+    return composed
+
 
 def discriminator(input_shape, f=4, name=None):
 
@@ -97,23 +130,23 @@ def discriminator(input_shape, f=4, name=None):
         x = LeakyReLU(0.2)(x)
 
         # ===
-        x = Conv2D(ndf * 2, kernel_size=f, strides=2, padding="same")(x)
-        # x = BatchNormalization(axis=3)(x)
-        x = InstanceNormalization(axis=3)(x)
+        x = Conv2D(ndf * 2, kernel_size=f, strides=2, padding="same", kernel_initializer=RandomNormal(0., 0.02))(x)
+        x = BatchNormalization(axis=3, gamma_initializer=RandomNormal(1., 0.02))(x)
+        # x = InstanceNormalization(axis=-1, gamma_initializer=RandomNormal(1., 0.02))(x)
         #x = Dropout(0.3)(x)
         x = LeakyReLU(0.2)(x)
 
 
-        x = Conv2D(ndf * 4, kernel_size=f, strides=2, padding="same")(x)
-        # x = BatchNormalization(axis=3)(x)
-        x = InstanceNormalization(axis=3)(x)
+        x = Conv2D(ndf * 4, kernel_size=f, strides=2, padding="same", kernel_initializer=RandomNormal(0., 0.02))(x)
+        x = BatchNormalization(axis=3, gamma_initializer=RandomNormal(1., 0.02))(x)
+        # x = InstanceNormalization(axis=-1, gamma_initializer=RandomNormal(1., 0.02))(x)
         #x = Dropout(0.3)(x)
         x = LeakyReLU(0.2)(x)
 
 
-        x = Conv2D(ndf * 8, kernel_size=f, strides=2, padding="same")(x)
-        # x = BatchNormalization(axis=3)(x)
-        x = InstanceNormalization(axis=3)(x)
+        x = Conv2D(ndf * 8, kernel_size=f, strides=1, padding="same", kernel_initializer=RandomNormal(0., 0.02))(x)
+        x = BatchNormalization(axis=3, gamma_initializer=RandomNormal(1., 0.02))(x)
+        # x = InstanceNormalization(axis=-1, gamma_initializer=RandomNormal(1., 0.02))(x)
 
         x = LeakyReLU(0.2)(x)
 
@@ -149,23 +182,23 @@ def generator(input_shape, name):
                 name="encoder_"+name+"_0" )(x)
 
 
-        # x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
-        x = InstanceNormalization(axis=3,epsilon=1e-5,  gamma_initializer=RandomNormal(1., 0.02))(x)
-        #x = LeakyReLU(0.2)(x)
+        x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
+        # x = InstanceNormalization(axis=-1,epsilon=1e-5,  gamma_initializer=RandomNormal(1., 0.02))(x)
         x = Activation("relu")(x)
 
+        # ===
         x = Conv2D(ngf*2, kernel_size=3,
                 strides=2,
                 padding='same',
                 kernel_initializer=RandomNormal(0, 0.02),
                 bias_initializer='zeros',
                 name="encoder_"+name+"_1" )(x)
-        # x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
-        x = InstanceNormalization(axis=3,epsilon=1e-5,  gamma_initializer=RandomNormal(1., 0.02))(x)
-        #x = LeakyReLU(0.2)(x)
+        x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
+        # x = InstanceNormalization(axis=-1,epsilon=1e-5,  gamma_initializer=RandomNormal(1., 0.02))(x)
         x = Activation("relu")(x)
         # output shape = (128, 128, 128)
 
+        # ===
         # g.add(ReflectionPadding2D())
 
         x = Conv2D(ngf*4, kernel_size=3,
@@ -176,12 +209,12 @@ def generator(input_shape, name):
                 name="encoder_"+name+"_2",
                 )(x)
 
-        # x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
-        x = InstanceNormalization(axis=3,epsilon=1e-5,  gamma_initializer=RandomNormal(1., 0.02))(x)
+        x = BatchNormalization(axis=3,epsilon=1e-5, momentum=0.9, gamma_initializer=RandomNormal(1., 0.02))(x)
+        # x = InstanceNormalization(axis=-1,epsilon=1e-5,  gamma_initializer=RandomNormal(1., 0.02))(x)
         #x = LeakyReLU(0.2)(x)
-        # x = Activation("relu")(x)
+        #x = Activation("relu")(x)
         # output shape = (64, 64, 256)
-
+        # ===
         # # END ENCODER
 
 
@@ -196,9 +229,10 @@ def generator(input_shape, name):
         x = resnet_block(x, 64 * 4)
         x = resnet_block(x, 64 * 4)
 
-        x = resnet_block(x, 64 * 4)
-        x = resnet_block(x, 64 * 4)
-        x = resnet_block(x, 64 * 4)
+        # x = resnet_block(x, 64 * 4)
+        # x = resnet_block(x, 64 * 4)
+        # x = resnet_block(x, 64 * 4)
+
 
 
         # # END TRANSFORM
@@ -216,11 +250,14 @@ def generator(input_shape, name):
         # # DECODER with upscale
 
         x= scaleup(x, ngf * 2)
+
         x= scaleup(x, ngf)
 
         x = ReflectionPadding2D(padding=(3,3))(x)
         x = Conv2D(3, kernel_size=7, strides=1, padding="valid", name=name+"_out_layer")(x)
         x = Activation('tanh')(x)
+
+
         # exit()
         # END DECODER
 
@@ -246,6 +283,7 @@ def createImageGenerator( subset="train", data_type="A", batch_size=1, pp=None):
                          # rotation_range=5.,
                          preprocessing_function= pp,
                          horizontal_flip=True,
+
                          # width_shift_range=0.1,
                          # height_shift_range=0.1,
                          # zoom_range=0.1
@@ -262,7 +300,9 @@ def createImageGenerator( subset="train", data_type="A", batch_size=1, pp=None):
         'data/'+DATASET+'/'+image_directory,
         class_mode=None,
         batch_size=batch_size,
+        target_size=(IMG_HEIGHT, IMG_WIDTH),
         seed=seed)
+
 
     return image_generator
 
@@ -270,9 +310,11 @@ def createImageGenerator( subset="train", data_type="A", batch_size=1, pp=None):
 # @see https://github.com/soumith/ganhacks
 # @see https://medium.com/@utk.is.here/keep-calm-and-train-a-gan-pitfalls-and-tips-on-training-generative-adversarial-networks-edd529764aa9
 
-def generate_discriminator_labels(generator_trainer, margin=0.1, invert_labels_percentage=4):
-    ones = np.ones((BATCH_SIZE,)+ generator_trainer.output_shape[0][1:])
-    zeros = np.zeros((BATCH_SIZE,)+ generator_trainer.output_shape[0][1:])
+def generate_discriminator_labels(output_shape, margin=0.1, invert_labels_percentage=4):
+    ones = np.ones((BATCH_SIZE,)+ output_shape)
+    zeros = np.zeros((BATCH_SIZE,)+ output_shape)
+
+    return zeros, ones
 
     margin = random.uniform(0, margin)
     ones = np.sum([ones, -margin])
@@ -294,7 +336,13 @@ def fit(
     generator_trainer,
     disc_trainer,
     generator_AtoB,
-    generator_BtoA
+    generator_BtoA,
+    discriminator_A,
+    discriminator_B,
+    gen_optim,
+    gen_losses,
+    gen_losses_weights,
+    disc_optim
     ):
 
     fake_A_pool = []
@@ -320,23 +368,24 @@ def fit(
     session = K.get_session()
     fw = tf.summary.FileWriter(logdir="./tensorboard/"+now, graph=session.graph, flush_secs=5)
 
-    real_zeros = np.zeros((BATCH_SIZE,)+ generator_trainer.output_shape[0][1:])
 
+    real_zeros = np.zeros((BATCH_SIZE,)+ disc_trainer.output_shape[0][1:])
 
     while it  <= ITERATIONS:
 
 
+        noisy_zeros, noisy_ones = generate_discriminator_labels(disc_trainer.output_shape[0][1:])
 
-        noisy_zeros, noisy_ones = generate_discriminator_labels(generator_trainer)
 
         start = time.time()
         print("\nIteration %d " % it)
-        # simple man solution to decrease LR in generator: every X iterations we reduce the LR by 10%
-        if it>1 and not it % 2000:
-            K.set_value(generator_trainer.optimizer.lr, K.get_value(generator_trainer.optimizer.lr) * 0.9)
-            K.set_value(disc_trainer.optimizer.lr, K.get_value(disc_trainer.optimizer.lr) * 0.9)
 
-            print("IT %d | LR-- | New LR: G: %s D: %s \n " % (it, K.get_value(generator_trainer.optimizer.lr), K.get_value(disc_trainer.optimizer.lr)))
+        # simple man solution to decrease LR in generator: every X iterations we reduce the LR by 10%
+        # if it>1 and not it % 10000:
+        #     K.set_value(generator_trainer.optimizer.lr, K.get_value(generator_trainer.optimizer.lr) * 0.95)
+        #     K.set_value(disc_trainer.optimizer.lr, K.get_value(disc_trainer.optimizer.lr) * 0.95)
+
+        #     print("IT %d | LR-- | New LR: G: %s D: %s \n " % (it, K.get_value(generator_trainer.optimizer.lr), K.get_value(disc_trainer.optimizer.lr)))
 
 
         sys.stdout.flush()
@@ -348,6 +397,7 @@ def fit(
         fake_A_pool.extend(generator_BtoA.predict(real_B))
         fake_B_pool.extend(generator_AtoB.predict(real_A))
 
+
         #resize pool
         fake_A_pool = fake_A_pool[-FAKE_POOL_SIZE:]
         fake_B_pool = fake_B_pool[-FAKE_POOL_SIZE:]
@@ -358,13 +408,18 @@ def fit(
         fake_A = np.array(fake_A)
         fake_B = np.array(fake_B)
 
-        disc_trainer.trainable = True
-
         # print(K.get_value(disc_trainer.optimizer.lr))
 
         # K.set_value(disc_trainer.optimizer.lr, K.get_value(disc_trainer.optimizer.lr) * 4)
 
 
+
+        #freeze generator
+        generator_AtoB.trainable = False
+        generator_BtoA.trainable = False
+        discriminator_A.trainable = True
+        discriminator_B.trainable = True
+        disc_trainer.compile(optimizer=disc_optim, loss = 'MSE')
 
         for x in range(0, DISCRIMINATOR_ITERATIONS):
             _, D_loss_real_A, D_loss_fake_A, D_loss_real_B, D_loss_fake_B = \
@@ -378,12 +433,19 @@ def fit(
         #                 discriminator_real_B,
         #                 discriminator_generated_B] , name="discriminator_trainer")
 
-        disc_trainer.trainable = False
+
         print("=====")
         print("Discriminator loss:")
         print("Real A: %s, Fake A: %s || Real B: %s, Fake B: %s " % ( D_loss_real_A, D_loss_fake_A, D_loss_real_B, D_loss_fake_B))
 
 
+
+        #freeze discriminator
+        generator_AtoB.trainable = True
+        generator_BtoA.trainable = True
+        discriminator_A.trainable = False
+        discriminator_B.trainable = False
+        generator_trainer.compile(optimizer=gen_optim, loss = gen_losses, loss_weights=gen_losses_weights)
 
         # on generator training we don't use noisy labels for target
         if USE_IDENTITY_LOSS:
@@ -391,6 +453,15 @@ def fit(
                 generator_trainer.train_on_batch(
                     [real_A, real_B],
                     [real_zeros, real_zeros, real_A, real_B, real_A, real_B])
+
+                # generator_trainer_outputs= [
+                #     discriminator_generated_B,  # MSE LOSS * 1
+                #     discriminator_generated_A,  # MSE LOSS * 1
+                #     cyc_A,                      # MAE LOSS * CYCLIC_LOSS_MULTIPLIER
+                #     cyc_B,                      # MAE LOSS * CYCLIC_LOSS_MULTIPLIER
+                #     generated_B,                # MAE LOSS * 1
+                #     generated_A,                # MAE LOSS * 1
+                # ]
         else:
             _, G_loss_fake_B, G_loss_fake_A, G_loss_rec_A, G_loss_rec_B = \
                 generator_trainer.train_on_batch(
@@ -440,7 +511,13 @@ def fit(
 
         # fw.flush()
 
-        if not (it % SAVE_IMAGES_INTERVAL ):
+
+        if it < 5000:
+            save_images = not (it % SAVE_IMAGES_INTERVAL)
+        else:
+            save_images = not (it % (SAVE_IMAGES_INTERVAL * 10 ))
+
+        if save_images:
             imgA = real_A
             # print(imgA.shape)
             imga2b = generator_AtoB.predict(imgA)
@@ -473,6 +550,7 @@ def fit(
         summary = tf.Summary(value=summary_values)
 
         fw.add_summary(summary, global_step=it)
+
 
 
 
@@ -510,7 +588,7 @@ if __name__ == '__main__':
 
 
     ### GENERATOR TRAINING
-    optim = keras.optimizers.Adam(lr=0.0002, beta_1=0.5, beta_2=0.999, epsilon=1e-08)
+    gen_optim = keras.optimizers.Adam(lr=0.0002, beta_1=0.5, beta_2=0.999, epsilon=1e-08)
 
     # input_A = Input(batch_shape=(None, IMG_WIDTH, IMG_HEIGHT, IMG_DEPTH), name="gt_input_real_A")
     # generated_B = generator_AtoB(input_A)
@@ -525,7 +603,7 @@ if __name__ == '__main__':
 
 
     # cyclic error is increased, because it's more important
-    cyclic_weight_multiplier = 15
+    CYCLIC_LOSS_MULTIPLIER = 10
 
 
     generator_trainer_inputs = [input_A, input_B]
@@ -534,25 +612,25 @@ if __name__ == '__main__':
         generator_trainer_outputs= [
             discriminator_generated_B,  # MSE LOSS * 1
             discriminator_generated_A,  # MSE LOSS * 1
-            cyc_A,                      # MAE LOSS * cyclic_weight_multiplier
-            cyc_B,                      # MAE LOSS * cyclic_weight_multiplier
-            generated_B,                # MAE LOSS * 1
-            generated_A,                # MAE LOSS * 1
+            cyc_A,                      # MAE LOSS * CYCLIC_LOSS_MULTIPLIER
+            cyc_B,                      # MAE LOSS * CYCLIC_LOSS_MULTIPLIER
+            generated_B,                # MAE LOSS * IDENTITY_LOSS_MULTIPLIER
+            generated_A,                # MAE LOSS * IDENTITY_LOSS_MULTIPLIER
         ]
 
 
-        losses =         [ "MSE", "MSE", "MAE",                   "MAE",                    "MAE", "MAE"]
-        losses_weights = [ 1,     1,     cyclic_weight_multiplier, cyclic_weight_multiplier,  1,     1    ]
+        gen_losses =         [ "MSE", "MSE", "MAE",                   "MAE",                    "MAE", "MAE"]
+        gen_losses_weights = [ 1,     1,     CYCLIC_LOSS_MULTIPLIER, CYCLIC_LOSS_MULTIPLIER,  IDENTITY_LOSS_MULTIPLIER, IDENTITY_LOSS_MULTIPLIER    ]
     else:
         generator_trainer_outputs = [
             discriminator_generated_B,  # MSE LOSS * 1
             discriminator_generated_A,  # MSE LOSS * 1
-            cyc_A,                      # MAE LOSS * cyclic_weight_multiplier
-            cyc_B,                      # MAE LOSS * cyclic_weight_multiplier
+            cyc_A,                      # MAE LOSS * CYCLIC_LOSS_MULTIPLIER
+            cyc_B,                      # MAE LOSS * CYCLIC_LOSS_MULTIPLIER
         ]
 
-        losses =         [ "MSE", "MSE", "MAE",                   "MAE"]
-        losses_weights = [ 1,     1,     cyclic_weight_multiplier, cyclic_weight_multiplier]
+        gen_losses =         [ "MSE",    "MSE",   "MAE",                   "MAE"]
+        gen_losses_weights = [ 1,           1,          CYCLIC_LOSS_MULTIPLIER, CYCLIC_LOSS_MULTIPLIER]
 
 
     generator_trainer =  Model(
@@ -560,7 +638,7 @@ if __name__ == '__main__':
         generator_trainer_outputs,
         name="generator_trainer"
     )
-    generator_trainer.compile(optimizer=optim, loss = losses, loss_weights=losses_weights)
+    generator_trainer.compile(optimizer=gen_optim, loss = gen_losses, loss_weights=gen_losses_weights)
 
 
 
@@ -601,7 +679,13 @@ if __name__ == '__main__':
     fit(generator_trainer,
         disc_trainer,
         generator_AtoB,
-        generator_BtoA)
+        generator_BtoA,
+        discriminator_A,
+        discriminator_B,
+        gen_optim,
+        gen_losses,
+        gen_losses_weights,
+        disc_optim)
 
 
 
